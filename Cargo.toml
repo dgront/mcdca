@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 rand="0.8.5"
+bioshell-core = { path = "../../bioshell4/bioshell-core" }
 
 [[bin]]
 name = "mcdca"
