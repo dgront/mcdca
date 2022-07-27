@@ -72,7 +72,16 @@ impl Couplings {
     /// Prints the large matrix of couplings on the screen
     pub fn show(&self) { Couplings::show_matrix(self.n, self.k, &self.cplngs); }
 
-    pub fn delta_energy(&self, system: &Vec<i8>, pos: usize, old: usize, new: usize) -> f32 {
+    pub fn decode_sequence(&self, system: &Vec<u8>) -> String {
+        let mut buffer: Vec<u8> = Vec::new();
+        buffer.reserve(system.len());
+        for i in 0..system.len() {
+            buffer.push(self.index_to_aa[system[i] as usize]);
+        }
+        String::from_utf8_lossy(&buffer).to_string()
+    }
+
+    pub fn delta_energy(&self, system: &Vec<u8>, pos: usize, old: usize, new: usize) -> f32 {
         let mut en: f32 = 0.0;
         let mut pos_j: usize = 0;
         let pos_i: usize = pos * self.k;
@@ -85,7 +94,7 @@ impl Couplings {
         return en;
     }
 
-    pub fn total_energy(&self, system: &Vec<i8>) -> f32 {
+    pub fn total_energy(&self, system: &Vec<u8>) -> f32 {
         let mut en:f32 = 0.0;
         let mut pos_i :usize = 0;
         for aa_i in system.iter() {
@@ -101,7 +110,7 @@ impl Couplings {
 }
 
 
-pub fn accumulate_counts(system: &Vec<i8>, n_aa:usize, counts: &mut Vec<Vec<f32>>) {
+pub fn accumulate_counts(system: &Vec<u8>, n_aa:usize, counts: &mut Vec<Vec<f32>>) {
     let mut pos_i: usize = 0;
     for aa_i in system.iter() {
         let mut pos_j: usize = 0;
@@ -113,7 +122,7 @@ pub fn accumulate_counts(system: &Vec<i8>, n_aa:usize, counts: &mut Vec<Vec<f32>
     }
 }
 
-pub fn isothermal_mc(system: &mut Vec<i8>, energy: &Couplings, inner_cycles: i32, outer_cycles: i32) -> Vec<Vec<f32>>{
+pub fn isothermal_mc(system: &mut Vec<u8>, energy: &Couplings, inner_cycles: i32, outer_cycles: i32) -> Vec<Vec<f32>>{
 
     let mut counts: Vec<Vec<f32>> = vec![vec![0.0; energy.n * energy.k]; energy.n * energy.k];
     let mut rng = rand::thread_rng();
@@ -127,14 +136,14 @@ pub fn isothermal_mc(system: &mut Vec<i8>, energy: &Couplings, inner_cycles: i32
                 let new_aa: usize = rng.gen_range(0..energy.k);
                 let delta_en = energy.delta_energy(system, pos, system[pos] as usize, new_aa);
                 if delta_en > 0.0 && (-delta_en).exp() < rng.gen_range(0.0..1.0) { continue; }
-                system[pos] = new_aa as i8;
+                system[pos] = new_aa as u8;
                 total_en += delta_en;
                 n_succ += 1.0;
             }
         }
         n_obs += 1.0;
         accumulate_counts(&system, energy.k, &mut counts);
-        // println!("{} {:?}",total_en,system);
+        println!("{:4} {}",total_en, energy.decode_sequence(&system));
     }
     println!("#{}",n_succ / (outer_cycles*inner_cycles*system.len() as i32) as f32);
     counts.iter_mut().for_each(|el| el.iter_mut().for_each(|iel| *iel /= n_obs));
@@ -142,16 +151,16 @@ pub fn isothermal_mc(system: &mut Vec<i8>, energy: &Couplings, inner_cycles: i32
 }
 
 pub fn main() {
-    let seq_len: usize = 10;
-    let mut system: Vec<i8> = vec![0; seq_len];
+    let seq_len: usize = 100;
+    let mut system: Vec<u8> = vec![0; seq_len];
 
-    // let mut en: Couplings = Couplings::new(100, "ACDEFGHIKLMNPQRSTVWY-");
-    let mut en: Couplings = Couplings::new(seq_len, "ACD");
+    let mut en: Couplings = Couplings::new(seq_len, "ACDEFGHIKLMNPQRSTVWY-");
+    // let mut en: Couplings = Couplings::new(seq_len, "ACD");
 
     en.init_couplings_diagonaly();
 
     en.total_energy(&system);
-    let counts = isothermal_mc(&mut system, &en,100,1000);
-    en.show();
+    let counts = isothermal_mc(&mut system, &en,10,100000);
+    // en.show();
     Couplings::show_matrix(en.n, en.k, &counts);
 }
