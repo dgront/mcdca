@@ -3,28 +3,13 @@ use std::collections::HashMap;
 
 use bioshell_core::Sequence;
 
-// const N: usize = 50;
-// const K: usize = 21;
-
-// pub fn init_diagonal_couplings(cplngs: &mut Vec<Vec<f32>>) {
-//     for i in 1..N {
-//         let ii = i * K;
-//         for j in 0..K {
-//             cplngs[ii + j][ii - K + j] = -1.0;
-//             cplngs[ii - K + j][ii + j] = -1.0;
-//         }
-//     }
-//     for j in 0..K {
-//         cplngs[j][K + j] = -1.0;
-//         cplngs[K + j][j] = -1.0;
-//     }
-// }
 
 pub struct Couplings {
     pub n: usize,
     pub k: usize,
     cplngs: Vec<Vec<f32>>,
     index_to_aa: Vec<u8>,
+    aa_to_index: HashMap<u8, usize>,
 }
 
 impl Couplings {
@@ -33,7 +18,11 @@ impl Couplings {
         let m = vec![vec![0.0; seq_len * aa_order.len()]; seq_len * aa_order.len()];
         let index_to_aa = aa_order.as_bytes().to_vec();
         println!("amino acid order: {:?}",index_to_aa);
-        Couplings { n: seq_len, k: aa_order.len(), cplngs: m, index_to_aa }
+        let mut aa_to_index = HashMap::new();
+        for i in 0..aa_order.len() {
+            aa_to_index.insert(index_to_aa[i],i);
+        }
+        Couplings { n: seq_len, k: aa_order.len(), cplngs: m, index_to_aa, aa_to_index }
     }
 
     /// Initializes coupling diagonally.
@@ -56,8 +45,16 @@ impl Couplings {
     ///
     pub fn init_couplings_by_msa(&mut self, msa: &Vec<Sequence>) {
         for sequence in msa {
-            todo!()
+            for i_pos in 1..self.n {
+                let i_aa = sequence.aa(i_pos);
+                let ii = i_pos * self.k + self.aa_to_index[&i_aa];
+                for j_pos in 0..i_pos {
+                    let j_aa = self.aa_to_index[&sequence.aa(j_pos)];
+                    self.cplngs[ii][j_pos * self.k + j_aa] += -1.0;
+                }
+            }
         }
+        self.cplngs.iter_mut().for_each(|el| el.iter_mut().for_each(|iel| *iel /= msa.len() as f32));
     }
 
     /// Prints the large matrix of couplings on the screen
