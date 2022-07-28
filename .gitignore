@@ -1,0 +1,9 @@
+pkg/
+target/
+.idea/
+Cargo.lock
+*.dat
+p
+o
+log
+out
