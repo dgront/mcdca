@@ -29,13 +29,21 @@ impl Observer for PrintSequence {
 
 pub struct ObservedCounts {
     counts: Couplings,
-    output: String
+    output: String,
+    n_observ: f32,
+    tmp_i: Vec<usize>,
 }
 
 impl ObservedCounts {
 
     pub fn new(seq_len: usize, n_aa_types: usize, out_name:&str) -> ObservedCounts {
-        ObservedCounts{counts: Couplings::new(seq_len, n_aa_types), output: out_name.parse().unwrap()}
+        let mut tmp_i: Vec<usize> = vec![0; seq_len];
+        ObservedCounts {
+            counts: Couplings::new(seq_len, n_aa_types),
+            output: out_name.parse().unwrap(),
+            n_observ: 0.0,
+            tmp_i
+        }
     }
 }
 
@@ -43,20 +51,62 @@ impl Observer for ObservedCounts {
     type O = EvolvingSequence;
 
     fn observe(&mut self, obj: &Self::O) {
-        let mut pos_i: usize = 0;
-        for aa_i in obj.sequence.iter() {
-            let mut pos_j: usize = 0;
-            for aa_j in obj.sequence.iter() {
-                self.counts.data[pos_i + *aa_i as usize][pos_j + *aa_j as usize] += 1.0;
-                pos_j += self.counts.k;
+
+        self.n_observ += 1.0;
+        for idx in 0..self.counts.n {
+            self.tmp_i[idx] = idx * self.counts.k + obj.sequence[idx] as usize;
+        }
+        for i in 0..self.counts.n {
+            let ii = self.tmp_i[i];
+            for j in 0..self.counts.n {
+                self.counts.data[ii][self.tmp_i[j]] += 1.0;
             }
-            pos_i += self.counts.k;
         }
     }
 
     fn close(&mut self) {
         let mut out_writer = out_writer(&self.output.as_str());
+        self.counts.normalize(self.n_observ);
         out_writer.write(format!("{}", self.counts).as_bytes()).ok() ;
+    }
+}
+
+/// Helper struct to store a single sequence data
+struct SequenceEntry {
+    energy: f32,
+    sequence: String
+}
+
+/// Collects sequences together with their energy
+///
+/// The collection can estimate the observed counts from sequences it keeps assuming canonical ensemble
+pub struct SequenceCollection {
+    output: String,
+    sequences: Vec<SequenceEntry>
+}
+
+impl SequenceCollection {
+
+    /// Creates a new empty collection of sequence entries
+    pub fn new(out_name:&str) -> SequenceCollection {
+        SequenceCollection{output: out_name.parse().unwrap(), sequences: Vec::new()}
+    }
+}
+
+impl Observer for SequenceCollection {
+    type O = EvolvingSequence;
+
+    /// Copy the current sequence and energy from an observed `EvolvingSequence` instance
+    fn observe(&mut self, obj: &Self::O) {
+        self.sequences.push(SequenceEntry{energy:obj.energy(), sequence:obj.decode_sequence()})
+    }
+
+    /// Stores observations in a file, or prints on the screen
+    fn close(&mut self) {
+        let mut out_writer = out_writer(&self.output.as_str());
+        for s in self.sequences.iter() {
+            out_writer.write(format!("{:3} {}\n", s.energy, s.sequence).as_bytes()).ok();
+        }
     }
 }
 

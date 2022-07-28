@@ -17,6 +17,10 @@ impl Couplings {
         let m = vec![vec![0.0; size]; size];
         Couplings { n: seq_len, k: n_aa_types, data: m }
     }
+
+    pub fn normalize(&mut self, cnt: f32) {
+        self.data.iter_mut().for_each(|el| el.iter_mut().for_each(|iel| *iel /= cnt as f32))
+    }
 }
 
 impl fmt::Display for Couplings {
@@ -35,7 +39,7 @@ impl fmt::Display for Couplings {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         for (i, row) in self.data.iter().enumerate() {
             for (j, val) in row.iter().enumerate() {
-                write!(f, "{:.3} ", val);
+                write!(f, "{:.4} ", val);
                 if j % self.k == (self.k - 1) { write!(f, "  "); }
             }
             writeln!(f, "");
@@ -96,10 +100,8 @@ impl EvolvingSequence {
     }
 
     pub fn seq_len(&self) -> usize { self.cplngs.n }
+
     pub fn aa_cnt(&self) -> usize { self.cplngs.k }
-    pub fn normalize(&mut self, cnt: usize) {
-        self.cplngs.data.iter_mut().for_each(|el| el.iter_mut().for_each(|iel| *iel /= cnt as f32))
-    }
 
     pub fn decode_other(&self, system: &Vec<u8>) -> String {
         let mut buffer: Vec<char> = Vec::new();
@@ -186,5 +188,5 @@ pub fn init_couplings_by_msa(system: &mut EvolvingSequence, msa: &Vec<Sequence>)
             }
         }
     }
-    system.normalize(msa.len());
+    system.cplngs.normalize(msa.len() as f32);
 }
