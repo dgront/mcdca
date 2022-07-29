@@ -9,7 +9,7 @@ mod sampling;
 mod observers;
 use crate::couplings::{Couplings, EvolvingSequence, counts_from_msa};
 use crate::sampling::{SweepSingleAA, SimpleMCSampler};
-use crate::observers::{EnergyHistogram, ObservedCounts, Observer, SequenceCollection};
+use crate::observers::{EnergyHistogram, ObservedCounts, SequenceCollection};
 
 
 #[derive(Parser, Debug)]
@@ -33,6 +33,18 @@ struct Args {
     rna: bool,
 }
 
+pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, system: &mut EvolvingSequence) {
+
+    let nk = system.seq_len()*system.aa_cnt();
+    for i in 0..nk {
+        for j in 0..nk {
+            let mut delta = target_counts.data[i][j] - observed_counts.data[i][j];
+            delta /= (2.0 * observed_counts.data[i][j]);
+            system.cplngs.data[i][j] -= delta;
+        }
+    }
+}
+
 pub fn main() {
     let args = Args::parse();
 
@@ -44,7 +56,7 @@ pub fn main() {
     a3m_to_fasta(&mut msa, &A3mConversionMode::RemoveSmallCaps);
 
     // ---------- Create sequence
-    let alphabet: &str = if args.rna { "ACGU-" } else { "ACDEFGHIKLMNPQRSTVWY-" };
+    let alphabet: &str = if args.rna { "ACGU" } else { "ACDEFGHIKLMNPQRSTVWY-" };
     let mut system: EvolvingSequence = EvolvingSequence::new(&seq, alphabet);
 
     let target = counts_from_msa(&system, &msa);
@@ -65,11 +77,18 @@ pub fn main() {
     sampler.outer_observers.push( Box::new(coupled_pos));
     sampler.outer_observers.push( Box::new(collect_seq));
 
-    // ---------- Run the simulation!
+    // ---------- Other settings
     let n_inner: i32 = args.inner;
     let n_outer: i32 = args.outer;
-    sampler.run(&mut system, n_inner, n_outer);
 
-    // ---------- Write observations
-    sampler.close_observers();
+    // ---------- Run the simulation!
+    for _ in 0..5 {
+        // ---------- Forward step - infer counts
+        sampler.run(&mut system, n_inner, n_outer);
+
+        // ---------- Write observations
+        sampler.close_observers();
+
+        // update_couplings(&target, coupled_pos.get_counts(), &mut system);
+    }
 }

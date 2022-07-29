@@ -8,6 +8,7 @@ use crate::{Couplings, EvolvingSequence};
 pub trait Observer {
     type O;
     fn observe(&mut self, object: &Self::O);
+    fn flush(&mut self);
     fn close(&mut self);
 }
 
@@ -20,6 +21,8 @@ impl Observer for PrintSequence {
     fn observe(&mut self, obj: &Self::O) {
         println!("{:4} {}", obj.energy(), obj.decode_sequence());
     }
+
+    fn flush(&mut self) {}
 
     fn close(&mut self) {}
 }
@@ -43,6 +46,9 @@ impl ObservedCounts {
             tmp_i
         }
     }
+
+    /// Provide read-only access to the current state of observed counts
+    pub fn get_counts(&self) -> &Couplings { &self.counts }
 }
 
 impl Observer for ObservedCounts {
@@ -62,11 +68,14 @@ impl Observer for ObservedCounts {
         }
     }
 
-    fn close(&mut self) {
+    fn flush(&mut self) {
         let mut out_writer = out_writer(&self.output.as_str());
         if self.n_observ > 0.0 { self.counts.normalize(self.n_observ); }
         out_writer.write(format!("{}", self.counts).as_bytes()).ok();
+        self.counts.clear();
     }
+
+    fn close(&mut self) {}
 }
 
 /// Helper struct to store a single sequence data
@@ -100,12 +109,15 @@ impl Observer for SequenceCollection {
     }
 
     /// Stores observations in a file, or prints on the screen
-    fn close(&mut self) {
+    fn flush(&mut self) {
         let mut out_writer = out_writer(&self.output.as_str());
         for s in self.sequences.iter() {
             out_writer.write(format!("{:3} {}\n", s.energy, s.sequence).as_bytes()).ok();
         }
+        self.sequences.clear();
     }
+
+    fn close(&mut self) {}
 }
 
 /// Observer that collects energy observations into a histogram
@@ -141,8 +153,10 @@ impl Observer for EnergyHistogram {
         self.stats.insert(obj.total_energy as f64);
     }
 
-    fn close(&mut self) {
+    fn flush(&mut self) {
         let mut out_writer = out_writer(&self.output.as_str());
         out_writer.write(format!("{}", self.stats).as_bytes()).ok() ;
     }
+
+    fn close(&mut self) {}
 }

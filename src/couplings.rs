@@ -20,6 +20,16 @@ impl Couplings {
     pub fn normalize(&mut self, cnt: f32) {
         self.data.iter_mut().for_each(|el| el.iter_mut().for_each(|iel| *iel /= cnt))
     }
+
+    /// Sets all coupling values to 0.0
+    pub fn clear(&mut self) {
+        let nk = self.n*self.k;
+        for i in 0..nk {
+            for j in 0..nk {
+                self.data[i][j] = 0.0;
+            }
+        }
+    }
 }
 
 impl fmt::Display for Couplings {
@@ -70,11 +80,11 @@ pub fn init_couplings_diagonally(cplngs: &mut Couplings) {
 
 // -----------------------------------------------------
 pub struct EvolvingSequence {
-    pub(crate) total_energy: f32,
-    pub(crate) sequence: Vec<u8>,
+    pub total_energy: f32,
+    pub sequence: Vec<u8>,
     index_to_aa: Vec<char>,
     aa_to_index_map: HashMap<char, u8>,
-    cplngs: Couplings,
+    pub(crate) cplngs: Couplings,
 }
 
 impl EvolvingSequence {
