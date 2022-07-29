@@ -1,8 +1,7 @@
 use std::fmt;
-use rand::Rng;
 use std::collections::HashMap;
 
-use bioshell_core::Sequence;
+use bioshell_core::sequence::Sequence;
 
 pub struct Couplings {
     pub n: usize,
@@ -19,7 +18,7 @@ impl Couplings {
     }
 
     pub fn normalize(&mut self, cnt: f32) {
-        self.data.iter_mut().for_each(|el| el.iter_mut().for_each(|iel| *iel /= cnt as f32))
+        self.data.iter_mut().for_each(|el| el.iter_mut().for_each(|iel| *iel /= cnt))
     }
 }
 
@@ -74,7 +73,7 @@ pub struct EvolvingSequence {
     pub(crate) total_energy: f32,
     pub(crate) sequence: Vec<u8>,
     index_to_aa: Vec<char>,
-    aa_to_index: HashMap<char, u8>,
+    aa_to_index_map: HashMap<char, u8>,
     cplngs: Couplings,
 }
 
@@ -86,13 +85,13 @@ impl EvolvingSequence {
         let cplngs = Couplings::new(n, k);
         let sequence: Vec<u8> = Vec::new();
         let index_to_aa = aa_order.chars().collect();
-        let mut aa_to_index: HashMap<char, u8> = HashMap::new();
+        let mut aa_to_index_map: HashMap<char, u8> = HashMap::new();
         for (i, aai) in aa_order.chars().enumerate() {
-            aa_to_index.insert(aai, i as u8);
+            aa_to_index_map.insert(aai, i as u8);
         }
         let mut cplngs = Couplings::new(n, k);
         init_couplings_diagonally(&mut cplngs);
-        let mut out = EvolvingSequence { total_energy: 0.0, sequence, index_to_aa, aa_to_index, cplngs };
+        let mut out = EvolvingSequence { total_energy: 0.0, sequence, index_to_aa, aa_to_index_map, cplngs };
         out.sequence = out.encode_sequence(starting_sequence);
         out.total_energy = out.energy();
 
@@ -102,6 +101,19 @@ impl EvolvingSequence {
     pub fn seq_len(&self) -> usize { self.cplngs.n }
 
     pub fn aa_cnt(&self) -> usize { self.cplngs.k }
+
+    /// Convert a given amino acid character to its internal index
+    pub fn aa_to_index(&self, aa:&char) -> u8 {
+        let aa_id: &u8 =  match self.aa_to_index_map.get(&aa) {
+            Some(i) => { i },
+            None => {
+                eprintln!("Unknown amino acid symbol {}, converted to gap", &aa);
+                &self.aa_to_index_map[&'-']
+            }
+        };
+
+        *aa_id
+    }
 
     pub fn decode_other(&self, system: &Vec<u8>) -> String {
         let mut buffer: Vec<char> = Vec::new();
@@ -121,7 +133,7 @@ impl EvolvingSequence {
         let mut buffer: Vec<u8> = Vec::new();
         buffer.reserve(seq.len());
         for aai in seq.chars() {
-            buffer.push(self.aa_to_index[&aai]);
+            buffer.push(self.aa_to_index(&aai));
         }
         return buffer;
     }
@@ -173,20 +185,40 @@ impl EvolvingSequence {
 
 /// Initializes coupling from a given set of sequences.
 ///
-pub fn init_couplings_by_msa(system: &mut EvolvingSequence, msa: &Vec<Sequence>) {
+pub fn counts_from_msa(system: &EvolvingSequence, msa: &Vec<Sequence>) -> Couplings {
 
+    if !check_msa(msa) { std::process::exit(1);}
+
+    let n = system.seq_len();
+    let k = system.aa_cnt();
+    let mut cplngs: Couplings = Couplings::new(n, k);
+
+    let mut tmp_i: Vec<usize> = vec![0; n];       // Temporary indexes aa->cplngs matrix
     for sequence in msa {
-        let n = system.seq_len();
-        let k = system.aa_cnt();
-
+        // --- for every position in a sequence, find the location of that AA in the big cplngs matrix
+        // --- This is done in linear time here and called below in a square loop
+        for idx in 0..n {
+            tmp_i[idx] = idx * k + system.aa_to_index(&sequence.char(idx)) as usize;
+        }
+        // --- Count each pair coincidence
         for i_pos in 1..n {
-            let i_aa = sequence.char(i_pos);
-            let ii = i_pos * k + system.aa_to_index[&i_aa] as usize;
             for j_pos in 0..i_pos {
-                let j_aa: u8 = system.aa_to_index[&sequence.char(j_pos)];
-                system.cplngs.data[ii][j_pos * k + j_aa as usize] += -1.0;
+                cplngs.data[tmp_i[i_pos]][tmp_i[j_pos]] += 1.0;
+                cplngs.data[tmp_i[j_pos]][tmp_i[i_pos]] += 1.0;
             }
         }
     }
-    system.cplngs.normalize(msa.len() as f32);
+    cplngs.normalize(msa.len() as f32);
+
+    return cplngs;
+}
+
+fn check_msa(msa: &Vec<Sequence>) -> bool {
+    let first: &Sequence = &msa[0];
+    for i in 1..msa.len() {
+        if msa[i].len() != first.len() {
+            eprintln!("\nSequence of incorrect length:\n {}\n",msa[i])
+        }
+    }
+    true
 }

@@ -1,5 +1,3 @@
-use std::os::macos::raw::stat;
-
 use bioshell_numerical::statistics::Histogram;
 use bioshell_core::utils::out_writer;
 
@@ -66,8 +64,8 @@ impl Observer for ObservedCounts {
 
     fn close(&mut self) {
         let mut out_writer = out_writer(&self.output.as_str());
-        self.counts.normalize(self.n_observ);
-        out_writer.write(format!("{}", self.counts).as_bytes()).ok() ;
+        if self.n_observ > 0.0 { self.counts.normalize(self.n_observ); }
+        out_writer.write(format!("{}", self.counts).as_bytes()).ok();
     }
 }
 
