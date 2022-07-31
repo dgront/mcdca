@@ -48,7 +48,7 @@ impl fmt::Display for Couplings {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         for (i, row) in self.data.iter().enumerate() {
             for (j, val) in row.iter().enumerate() {
-                write!(f, "{:.4} ", val);
+                write!(f, "{:.3} ", val);
                 if j % self.k == (self.k - 1) { write!(f, "  "); }
             }
             writeln!(f, "");
