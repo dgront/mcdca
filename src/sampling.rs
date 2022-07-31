@@ -40,18 +40,33 @@ impl<S> SimpleMCSampler<S> {
         }
     }
 
+    pub fn get_observer<T: 'static>(&self, name: &str) -> Option<&T> {
+
+        for o in self.inner_observers.iter() {
+            if name == o.name() { return o.as_any().downcast_ref::<T>(); }
+        }
+        for o in self.outer_observers.iter() {
+            if name == o.name() { return o.as_any().downcast_ref::<T>(); }
+        }
+
+        return None;
+    }
+
     /// Add another sweep to this Monte Carlo sampler
     pub fn add_sweep(&mut self, sweep: Box<dyn MCSweep<S = S>>) { self.sweeps.push(sweep); }
 
     /// Call `close()` method for all observers this sampler posses
     /// This typically closes all opened files, computes statistics etc.
     pub fn close_observers(&mut self) {
-        for i in 0..self.inner_observers.len() {
-            self.inner_observers[i].close();
-        }
-        for i in 0..self.outer_observers.len() {
-            self.outer_observers[i].close();
-        }
+        for o in self.inner_observers.iter_mut()  { o.close();}
+        for o in self.outer_observers.iter_mut()  { o.close();}
+    }
+
+    /// Call `flush()` method for all observers this sampler posses
+    /// This typically writes data to streams and clears buffers
+    pub fn flush_observers(&mut self) {
+        for o in self.inner_observers.iter_mut()  { o.flush();}
+        for o in self.outer_observers.iter_mut()  { o.flush();}
     }
 }
 

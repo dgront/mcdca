@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use bioshell_numerical::statistics::Histogram;
 use bioshell_core::utils::out_writer;
 
@@ -10,6 +12,8 @@ pub trait Observer {
     fn observe(&mut self, object: &Self::O);
     fn flush(&mut self);
     fn close(&mut self);
+    fn name(&self) -> &str;
+    fn as_any(&self) -> &dyn Any;
 }
 
 // ---------- DCA-related stuff
@@ -25,6 +29,10 @@ impl Observer for PrintSequence {
     fn flush(&mut self) {}
 
     fn close(&mut self) {}
+
+    fn name(&self) -> &str { "PrintSequence" }
+
+    fn as_any(&self) -> &dyn Any { self }
 }
 
 
@@ -49,6 +57,14 @@ impl ObservedCounts {
 
     /// Provide read-only access to the current state of observed counts
     pub fn get_counts(&self) -> &Couplings { &self.counts }
+
+    /// Normalize counts
+    pub fn normalize(&mut self) { self.counts.normalize(self.n_observ); }
+
+    /// The number of sequences seen by this observer.
+    /// This is the constant used to normalize the counts.
+    pub fn n_observed(& self) -> f32 { self.n_observ }
+
 }
 
 impl Observer for ObservedCounts {
@@ -76,6 +92,9 @@ impl Observer for ObservedCounts {
     }
 
     fn close(&mut self) {}
+
+    fn name(&self) -> &str { "ObservedCounts" }
+    fn as_any(&self) -> &dyn Any { self }
 }
 
 /// Helper struct to store a single sequence data
@@ -118,6 +137,10 @@ impl Observer for SequenceCollection {
     }
 
     fn close(&mut self) {}
+
+    fn name(&self) -> &str { "SequenceCollection" }
+
+    fn as_any(&self) -> &dyn Any { self }
 }
 
 /// Observer that collects energy observations into a histogram
@@ -159,4 +182,8 @@ impl Observer for EnergyHistogram {
     }
 
     fn close(&mut self) {}
+
+    fn name(&self) -> &str { "EnergyHistogram" }
+
+    fn as_any(&self) -> &dyn Any { self }
 }
