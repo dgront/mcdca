@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use bioshell_numerical::statistics::Histogram;
-use bioshell_core::utils::out_writer;
+use bioshell_core::utils::{out_writer, writes_to_screen};
 
 // ---------- generic traits and types that should be relocated to bioshell
 
@@ -89,6 +89,7 @@ impl Observer for ObservedCounts {
         if self.n_observ > 0.0 { self.counts.normalize(self.n_observ); }
         out_writer.write(format!("{}", self.counts).as_bytes()).ok();
         self.counts.clear();
+        self.n_observ = 0.0;
     }
 
     fn close(&mut self) {}
@@ -107,6 +108,8 @@ struct SequenceEntry {
 ///
 /// The collection can estimate the observed counts from sequences it keeps assuming canonical ensemble
 pub struct SequenceCollection {
+    flush_separately: bool,
+    flush_id:i16,
     output: String,
     sequences: Vec<SequenceEntry>
 }
@@ -114,8 +117,15 @@ pub struct SequenceCollection {
 impl SequenceCollection {
 
     /// Creates a new empty collection of sequence entries
-    pub fn new(out_name:&str) -> SequenceCollection {
-        SequenceCollection{output: out_name.parse().unwrap(), sequences: Vec::new()}
+    ///
+    /// # Arguments
+    ///
+    /// * `out_name` -  name of the output file; use `stdout` or an empty string to print on the screen
+    /// * `flush_separately` - each flush goes to a separate file, which will be named `out_name + i`
+    ///     where `i` is the flush index and `out_name` is the original name given here. This flag
+    ///     is not relevant when the sequences are flushed into a screen
+    pub fn new(out_name:&str, flush_separately:bool) -> SequenceCollection {
+        SequenceCollection{flush_separately, flush_id:0, output: out_name.parse().unwrap(), sequences: Vec::new()}
     }
 }
 
@@ -127,9 +137,19 @@ impl Observer for SequenceCollection {
         self.sequences.push(SequenceEntry{energy:obj.energy(), sequence:obj.decode_sequence()})
     }
 
-    /// Stores observations in a file, or prints on the screen
+    /// Stores observations in a file or prints on the screen.
+    ///
+    /// When the `flush_separately` flag was set to `true`, it will create a separate file for the current pool
+    /// of sequences. Otherwise they will be appended to the existing one. The collection will be cleared after this call
     fn flush(&mut self) {
-        let mut out_writer = out_writer(&self.output.as_str());
+
+        let fname: String = if writes_to_screen(&self.output.as_str()) {
+            self.output.to_string()         // --- need to_string() makes a copy as we can't move it
+        } else {
+            self.flush_id += 1;
+            format!("{}-{}",&self.output, self.flush_id)
+        };
+        let mut out_writer = out_writer(fname.as_str());
         for s in self.sequences.iter() {
             out_writer.write(format!("{:3} {}\n", s.energy, s.sequence).as_bytes()).ok();
         }
