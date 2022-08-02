@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use bioshell_core::sequence::Sequence;
 
+#[derive(Clone, Debug)]
 pub struct Couplings {
     pub n: usize,
     pub k: usize,
@@ -46,14 +47,17 @@ impl fmt::Display for Couplings {
     /// println!("{}", cplngs);
     /// ```
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        let mut total: f32 = 0.0;
         for (i, row) in self.data.iter().enumerate() {
             for (j, val) in row.iter().enumerate() {
                 write!(f, "{:.3} ", val);
+                total += val;
                 if j % self.k == (self.k - 1) { write!(f, "  "); }
             }
             writeln!(f, "");
             if i % self.k == (self.k - 1) { writeln!(f, "#"); }
         }
+        writeln!(f, "# total: {total}");
         Ok(())
     }
 }

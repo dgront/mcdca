@@ -36,23 +36,35 @@ struct Args {
     rna: bool,
 }
 
-pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, n_observed: f32, system: &mut EvolvingSequence) -> f32 {
+pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, system: &mut EvolvingSequence) -> f32 {
 
-    let nk = system.seq_len()*system.aa_cnt();
+
+    let dumping = 0.1;
+    let nk = system.seq_len() * system.aa_cnt();
     let mut error: f32 = 0.0;
-    for i in 0..nk {
-        let i_pos = i / system.aa_cnt();
-        for j in 0..nk {
-            let j_pos = j / system.aa_cnt();
-            if i_pos == j_pos { continue }
-            if observed_counts.data[i][j] == 0.0 {
-                system.cplngs.data[i][j] = 0.0;
-            } else {
-                let obs_counts_normalised = observed_counts.data[i][j] / n_observed;
-                let mut delta = target_counts.data[i][j] - obs_counts_normalised;
-                error += delta;
-                delta /= 2.0 * obs_counts_normalised;
-                system.cplngs.data[i][j] -= delta;
+    for i_pos in 0..system.seq_len() {
+        for i_aa in 0..system.aa_cnt() {
+            let i_ind = i_pos* system.aa_cnt() + i_aa;
+            for j_pos in 0..system.seq_len() {
+                if i_pos == j_pos { continue }
+                for j_aa in 0..system.aa_cnt() {
+                    let j_ind = j_pos* system.aa_cnt() + j_aa;
+                    let target_val = target_counts.data[i_ind][j_ind];
+                    let observed_val = observed_counts.data[i_ind][j_ind];
+                    let mut delta = target_val - observed_val;
+                    if observed_val == 0.0 && target_val == 0.0 {
+                        system.cplngs.data[i_ind][j_ind] = 0.0;
+                        continue;
+                    }
+                    error += delta*delta;
+                    delta /= 2.0 * observed_val;
+                    delta *= dumping;
+                    println!("{:3} {:2} {:3} {:2}  should be: {:5.3}  observed: {:5.3}, J: {:5.3} -> {:5.3} by {} err {}",
+                             i_pos, i_aa, j_pos, j_aa,
+                             target_val, observed_val,
+                             system.cplngs.data[i_ind][j_ind], system.cplngs.data[i_ind][j_ind] - delta, delta, delta*delta);
+                    system.cplngs.data[i_ind][j_ind] -= delta;
+                }
             }
         }
     }
@@ -84,12 +96,12 @@ pub fn main() {
     sampler.add_sweep(Box::new(sweep));
 
     // ---------- Observers
-    let collect_seq = SequenceCollection::new("sequences");
+    let collect_seq = SequenceCollection::new("sequences", true);
     let energy_hist = EnergyHistogram::new(1.0,"en.dat");
     let coupled_pos = ObservedCounts::new(system.seq_len(), system.aa_cnt(), "observed_counts.dat");
 
-    sampler.inner_observers.push( Box::new(energy_hist));
-    sampler.outer_observers.push( Box::new(coupled_pos));
+    // sampler.inner_observers.push( Box::new(energy_hist));
+    sampler.inner_observers.push( Box::new(coupled_pos));
     sampler.outer_observers.push( Box::new(collect_seq));
 
     // ---------- Other settings
@@ -107,9 +119,11 @@ pub fn main() {
         match observed_counts {
             None => {}
             Some(counts) => {
-                // counts.normalize();
-                let err = update_couplings(&target, counts.get_counts(),counts.n_observed(), &mut system);
+                let mut obs_copy = counts.get_counts().clone();
+                obs_copy.normalize(counts.n_observed());
+                let err = update_couplings(&target, &obs_copy, &mut system);
                 println!("observed counts:\n{}", &counts.get_counts());
+                println!("Normalized observed:\n{}",obs_copy);
                 println!("couplings after update:\n{}", &system.cplngs);
                 println!("ERROR: {}", err);
             }
