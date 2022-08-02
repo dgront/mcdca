@@ -201,14 +201,18 @@ impl EvolvingSequence {
 ///
 pub fn counts_from_msa(system: &EvolvingSequence, msa: &Vec<Sequence>) -> Couplings {
 
-    if !check_msa(msa) { std::process::exit(1);}
-
     let n = system.seq_len();
     let k = system.aa_cnt();
     let mut cplngs: Couplings = Couplings::new(n, k);
 
     let mut tmp_i: Vec<usize> = vec![0; n];       // Temporary indexes aa->cplngs matrix
+    let mut n_seq: f32 = 0.0;
     for sequence in msa {
+        if sequence.len() != n {
+            eprintln!("\nSequence of incorrect length! Is: {}, should be: {}. The sequence skipped::\n {}\n",
+                      sequence.len(), n, sequence);
+            continue;
+        }
         // --- for every position in a sequence, find the location of that AA in the big cplngs matrix
         // --- This is done in linear time here and called below in a square loop
         for idx in 0..n {
@@ -221,18 +225,9 @@ pub fn counts_from_msa(system: &EvolvingSequence, msa: &Vec<Sequence>) -> Coupli
                 cplngs.data[tmp_i[j_pos]][tmp_i[i_pos]] += 1.0;
             }
         }
+        n_seq += 1.0;
     }
-    cplngs.normalize(msa.len() as f32);
+    cplngs.normalize(n_seq as f32);
 
     return cplngs;
-}
-
-fn check_msa(msa: &Vec<Sequence>) -> bool {
-    let first: &Sequence = &msa[0];
-    for i in 1..msa.len() {
-        if msa[i].len() != first.len() {
-            eprintln!("\nSequence of incorrect length:\n {}\n",msa[i])
-        }
-    }
-    true
 }

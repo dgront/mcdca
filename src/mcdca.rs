@@ -1,8 +1,9 @@
+use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::Write;
 use clap::{Parser};
 
-use bioshell_core::sequence::{from_fasta_file, a3m_to_fasta, A3mConversionMode};
+use bioshell_core::sequence::{from_fasta_file, a3m_to_fasta, A3mConversionMode, Sequence};
 
 mod couplings;
 mod sampling;
@@ -36,10 +37,11 @@ struct Args {
     rna: bool,
 }
 
-pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, system: &mut EvolvingSequence) -> f32 {
+pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, profile: &SeqProfile,
+                        pseudo_fraction: f32, system: &mut EvolvingSequence) -> f32 {
 
 
-    let dumping = 0.1;
+    let dumping = 0.01;
     let nk = system.seq_len() * system.aa_cnt();
     let mut error: f32 = 0.0;
     for i_pos in 0..system.seq_len() {
@@ -48,6 +50,7 @@ pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, 
             for j_pos in 0..system.seq_len() {
                 if i_pos == j_pos { continue }
                 for j_aa in 0..system.aa_cnt() {
+                    let pseudo = profile.fraction(i_pos, i_aa) * profile.fraction(j_pos, j_aa) * pseudo_fraction;
                     let j_ind = j_pos* system.aa_cnt() + j_aa;
                     let target_val = target_counts.data[i_ind][j_ind];
                     let observed_val = observed_counts.data[i_ind][j_ind];
@@ -57,7 +60,7 @@ pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, 
                         continue;
                     }
                     error += delta*delta;
-                    delta /= 2.0 * observed_val;
+                    delta = delta / (2.0 * observed_val + pseudo);
                     delta *= dumping;
                     println!("{:3} {:2} {:3} {:2}  should be: {:5.3}  observed: {:5.3}, J: {:5.3} -> {:5.3} by {} err {}",
                              i_pos, i_aa, j_pos, j_aa,
@@ -71,6 +74,58 @@ pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, 
 
     return error;
 }
+
+pub struct SeqProfile {
+    n: usize,
+    data: Vec<Vec<f32>>,
+}
+
+impl SeqProfile {
+    pub fn new(system: &EvolvingSequence, msa: &Vec<Sequence>) -> SeqProfile {
+        // if !check_msa(msa) { std::process::exit(1);}
+
+        let n = system.seq_len();
+        let k = system.aa_cnt();
+        let mut data: Vec<Vec<f32>> = vec![vec![0.0; k]; n];
+
+        for sequence in msa {
+            if sequence.len() != n {
+                eprintln!("\nSequence of incorrect length! Is: {}, should be: {}. The sequence skipped::\n {}\n",
+                          sequence.len(), n, sequence);
+                continue;
+            }            for idx in 0..n {
+                let aa_idx = system.aa_to_index(&sequence.char(idx)) as usize;
+                data[idx][aa_idx] += 1.0;
+            }
+        }
+
+        for idx in 0..n {
+            let sum: f32 = data[idx].iter().sum();
+            for aa_idx in 0..k {
+                data[idx][aa_idx] /= sum;
+            }
+        }
+
+        SeqProfile{n, data}
+    }
+
+    pub fn fraction(&self, pos: usize, aa: usize) -> f32 { self.data[pos][aa] }
+
+}
+
+impl Display for SeqProfile {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        for (i, row) in self.data.iter().enumerate() {
+            write!(f, "{i:4} ");
+            for val in row {
+                write!(f, "{val:5.3} ");
+            }
+            writeln!(f, "");
+        }
+        Ok(())
+    }
+}
+
 
 pub fn main() {
     let args = Args::parse();
@@ -86,9 +141,12 @@ pub fn main() {
     let alphabet: &str = if args.rna { "ACGU-" } else { "ACDEFGHIKLMNPQRSTVWY-" };
     let mut system: EvolvingSequence = EvolvingSequence::new(&seq, alphabet);
 
-    let target = counts_from_msa(&system, &msa);
+    // ---------- Create couplings and sequence profile
+    let target = counts_from_msa(&system, &mut msa);
     let mut w = File::create("target_msa_counts.dat").unwrap();
     writeln!(&mut w, "{}", target).unwrap();
+    let prof: SeqProfile = SeqProfile::new(&system, &msa);
+    println!("{}", &prof);
 
     // ---------- Create a MC sweep and a MC sampler
     let sweep: SweepSingleAA = SweepSingleAA {};
@@ -121,7 +179,8 @@ pub fn main() {
             Some(counts) => {
                 let mut obs_copy = counts.get_counts().clone();
                 obs_copy.normalize(counts.n_observed());
-                let err = update_couplings(&target, &obs_copy, &mut system);
+                let err = update_couplings(&target, &obs_copy,
+                                           &prof, 0.001, &mut system);
                 println!("observed counts:\n{}", &counts.get_counts());
                 println!("Normalized observed:\n{}",obs_copy);
                 println!("couplings after update:\n{}", &system.cplngs);
