@@ -1,7 +1,11 @@
+use std::env;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::Write;
 use clap::{Parser};
+
+#[macro_use]
+extern crate log;
 
 use bioshell_core::sequence::{from_fasta_file, a3m_to_fasta, A3mConversionMode, Sequence};
 
@@ -12,6 +16,9 @@ use crate::couplings::{Couplings, EvolvingSequence, counts_from_msa};
 use crate::sampling::{SweepSingleAA, SimpleMCSampler};
 use crate::observers::{EnergyHistogram, ObservedCounts, Observer, SequenceCollection};
 
+// Run 2GB1 case or FDX
+// make it multi-core
+// implement recycked sampling
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -55,17 +62,19 @@ pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, 
                     let target_val = target_counts.data[i_ind][j_ind];
                     let observed_val = observed_counts.data[i_ind][j_ind];
                     let mut delta = target_val - observed_val;
-                    if observed_val == 0.0 && target_val == 0.0 {
+                    if observed_val.abs() < 1e-7 && target_val.abs() < 1e-7 {
                         system.cplngs.data[i_ind][j_ind] = 0.0;
                         continue;
                     }
                     error += delta*delta;
                     delta = delta / (2.0 * observed_val + pseudo);
                     delta *= dumping;
-                    println!("{:3} {:2} {:3} {:2}  should be: {:5.3}  observed: {:5.3}, J: {:5.3} -> {:5.3} by {} err {}",
-                             i_pos, i_aa, j_pos, j_aa,
-                             target_val, observed_val,
-                             system.cplngs.data[i_ind][j_ind], system.cplngs.data[i_ind][j_ind] - delta, delta, delta*delta);
+                    if delta.abs() > 10000.0 {
+                        println!("{:3} {:2} {:3} {:2}  should be: {:5.3}  observed: {:5.3}, J: {:5.3} -> {:5.3} by {} err {}",
+                                 i_pos, i_aa, j_pos, j_aa,
+                                 target_val, observed_val,
+                                 system.cplngs.data[i_ind][j_ind], system.cplngs.data[i_ind][j_ind] - delta, delta, delta * delta);
+                    }
                     system.cplngs.data[i_ind][j_ind] -= delta;
                 }
             }
@@ -82,7 +91,6 @@ pub struct SeqProfile {
 
 impl SeqProfile {
     pub fn new(system: &EvolvingSequence, msa: &Vec<Sequence>) -> SeqProfile {
-        // if !check_msa(msa) { std::process::exit(1);}
 
         let n = system.seq_len();
         let k = system.aa_cnt();
@@ -129,6 +137,8 @@ impl Display for SeqProfile {
 
 pub fn main() {
     let args = Args::parse();
+    if env::var("RUST_LOG").is_err() { env::set_var("RUST_LOG", "debug") }
+    env_logger::init();
 
     // ---------- Input sequence
     let seq: String = from_fasta_file(&args.fasta)[0].to_string();
@@ -149,8 +159,8 @@ pub fn main() {
     println!("{}", &prof);
 
     // ---------- Create a MC sweep and a MC sampler
-    let sweep: SweepSingleAA = SweepSingleAA {};
     let mut sampler = SimpleMCSampler::new();
+    let sweep: SweepSingleAA = SweepSingleAA {};
     sampler.add_sweep(Box::new(sweep));
 
     // ---------- Observers
@@ -172,7 +182,7 @@ pub fn main() {
         // ---------- Forward step - infer counts
         sampler.run(&mut system, n_inner, n_outer);
 
-        println!("target counts:\n{}", &target);
+        debug!("target counts:\n{}", &target);
         let observed_counts : Option<&ObservedCounts> = sampler.get_observer("ObservedCounts");
         match observed_counts {
             None => {}
@@ -181,10 +191,10 @@ pub fn main() {
                 obs_copy.normalize(counts.n_observed());
                 let err = update_couplings(&target, &obs_copy,
                                            &prof, 0.001, &mut system);
-                println!("observed counts:\n{}", &counts.get_counts());
-                println!("Normalized observed:\n{}",obs_copy);
-                println!("couplings after update:\n{}", &system.cplngs);
-                println!("ERROR: {}", err);
+                debug!("observed counts:\n{}", &counts.get_counts());
+                debug!("Normalized observed:\n{}",obs_copy);
+                debug!("couplings after update:\n{}", &system.cplngs);
+                debug!("ERROR: {}", err);
             }
         };
 
