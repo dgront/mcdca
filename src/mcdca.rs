@@ -32,24 +32,25 @@ struct Args {
     msa: String,
     /// number of inner MC cycles
     #[clap(short, long, default_value_t = 100)]
-    inner: i32,
+    inner: u32,
     /// number of outer MC cycles
     #[clap(short, long, default_value_t = 100)]
-    outer: i32,
+    outer: u32,
     /// number of optimization cycles
     #[clap(short, long, default_value_t = 10, short='c')]
-    optcycles: i32,
+    optcycles: u32,
     /// input is RNA rather than a protein
     #[clap( long)]
     rna: bool,
+    /// number of optimization cycles
+    #[clap(short, long, default_value_t = 0.01, short='n')]
+    newton_step: f32,
 }
 
 pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, profile: &SeqProfile,
-                        pseudo_fraction: f32, system: &mut EvolvingSequence) -> f32 {
+                        pseudo_fraction: f32, newton_step: f32, system: &mut EvolvingSequence) -> f32 {
 
 
-    let dumping = 0.01;
-    let nk = system.seq_len() * system.aa_cnt();
     let mut error: f32 = 0.0;
     for i_pos in 0..system.seq_len() {
         for i_aa in 0..system.aa_cnt() {
@@ -68,7 +69,7 @@ pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, 
                     }
                     error += delta*delta;
                     delta = delta / (2.0 * observed_val + pseudo);
-                    delta *= dumping;
+                    delta *= newton_step;
                     if delta.abs() > 10000.0 {
                         println!("{:3} {:2} {:3} {:2}  should be: {:5.3}  observed: {:5.3}, J: {:5.3} -> {:5.3} by {} err {}",
                                  i_pos, i_aa, j_pos, j_aa,
@@ -147,6 +148,12 @@ pub fn main() {
     let mut msa = from_fasta_file(&args.msa);
     a3m_to_fasta(&mut msa, &A3mConversionMode::RemoveSmallCaps);
 
+    // ---------- Other settings
+    let n_inner: u32 = args.inner;
+    let n_outer: u32 = args.outer;
+    let n_cycles: u32 = args.optcycles;
+    let newton_step: f32 = args.newton_step;
+
     // ---------- Create sequence
     let alphabet: &str = if args.rna { "ACGU-" } else { "ACDEFGHIKLMNPQRSTVWY-" };
     let mut system: EvolvingSequence = EvolvingSequence::new(&seq, alphabet);
@@ -158,39 +165,40 @@ pub fn main() {
     let prof: SeqProfile = SeqProfile::new(&system, &msa);
     println!("{}", &prof);
 
+    // ---------- Observers
+    let collect_seq = SequenceCollection::new("sequences", true);
+    // let energy_hist = EnergyHistogram::new(1.0,"en.dat");
+    let coupled_pos = ObservedCounts::new(system.seq_len(), system.aa_cnt(), "observed_counts.dat");
+
     // ---------- Create a MC sweep and a MC sampler
     let mut sampler = SimpleMCSampler::new();
     let sweep: SweepSingleAA = SweepSingleAA {};
+    // let sweep: SweepAllAA= SweepAllAA::new(seq.len(), alphabet.len());
     sampler.add_sweep(Box::new(sweep));
 
-    // ---------- Observers
-    let collect_seq = SequenceCollection::new("sequences", true);
-    let energy_hist = EnergyHistogram::new(1.0,"en.dat");
-    let coupled_pos = ObservedCounts::new(system.seq_len(), system.aa_cnt(), "observed_counts.dat");
-
     // sampler.inner_observers.push( Box::new(energy_hist));
-    sampler.inner_observers.push( Box::new(coupled_pos));
-    sampler.outer_observers.push( Box::new(collect_seq));
+    sampler.observers.add_observer( Box::new(coupled_pos), 1);
+    sampler.observers.add_observer( Box::new(collect_seq), n_inner);
 
-    // ---------- Other settings
-    let n_inner: i32 = args.inner;
-    let n_outer: i32 = args.outer;
-    let n_cycles: i32 = args.optcycles;
 
     // ---------- Run the simulation!
     for _ in 0..n_cycles {
         // ---------- Forward step - infer counts
         sampler.run(&mut system, n_inner, n_outer);
+        system.observed.normalize((n_inner*n_outer) as f32 );
+        println!("{}", system.observed);
+        system.observed.clear();
+
 
         debug!("target counts:\n{}", &target);
-        let observed_counts : Option<&ObservedCounts> = sampler.get_observer("ObservedCounts");
+        let observed_counts : Option<&ObservedCounts> = sampler.observers.get_observer("ObservedCounts");
         match observed_counts {
             None => {}
             Some(counts) => {
                 let mut obs_copy = counts.get_counts().clone();
                 obs_copy.normalize(counts.n_observed());
                 let err = update_couplings(&target, &obs_copy,
-                                           &prof, 0.001, &mut system);
+                                           &prof, 0.001, newton_step, &mut system);
                 debug!("observed counts:\n{}", &counts.get_counts());
                 debug!("Normalized observed:\n{}",obs_copy);
                 debug!("couplings after update:\n{}", &system.cplngs);
@@ -199,6 +207,6 @@ pub fn main() {
         };
 
         // ---------- Write observations
-        sampler.flush_observers();
+        sampler.observers.flush_observers();
     }
 }

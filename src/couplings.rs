@@ -88,7 +88,8 @@ pub struct EvolvingSequence {
     pub sequence: Vec<u8>,
     index_to_aa: Vec<char>,
     aa_to_index_map: HashMap<char, u8>,
-    pub(crate) cplngs: Couplings,
+    pub cplngs: Couplings,
+    pub observed: Couplings,
 }
 
 impl EvolvingSequence {
@@ -104,8 +105,9 @@ impl EvolvingSequence {
             aa_to_index_map.insert(aai, i as u8);
         }
         let mut cplngs = Couplings::new(n, k);
+        let observed = Couplings::new(n, k);
         init_couplings_diagonally(&mut cplngs);
-        let mut out = EvolvingSequence { total_energy: 0.0, sequence, index_to_aa, aa_to_index_map, cplngs };
+        let mut out = EvolvingSequence { total_energy: 0.0, sequence, index_to_aa, aa_to_index_map, cplngs, observed };
         out.sequence = out.encode_sequence(starting_sequence);
         out.total_energy = out.energy();
 
@@ -194,6 +196,20 @@ impl EvolvingSequence {
         }
 
         return en;
+    }
+
+    pub fn energy_row(&self, pos: usize, energy: &mut Vec<f32>)  {
+
+        for aa_i in 0..self.cplngs.k { energy[aa_i] = 0.0; }
+        let pos_i: usize = pos * self.aa_cnt();
+        let mut pos_j: usize = 0;
+        for aa_j in self.sequence.iter() {
+            let row: &Vec<f32> = &self.cplngs.data[pos_j + *aa_j as usize];
+            for aa_i in 0..self.aa_cnt() {
+                energy[aa_i] += row[pos_i + aa_i];
+            }
+            pos_j += self.aa_cnt();
+        }
     }
 }
 
