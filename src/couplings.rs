@@ -22,6 +22,30 @@ impl Couplings {
         self.data.iter_mut().for_each(|el| el.iter_mut().for_each(|iel| *iel /= cnt))
     }
 
+    /// Find the minimum coupling value
+    pub fn min(&self) -> f32 {
+        let mut m = self.data[0][0];
+        let nk = self.n * self.k;
+        for i in 0..nk {
+            for j in 0..nk {
+                m = m.min(self.data[i][j])
+            }
+        }
+        return m;
+    }
+
+    /// Find the maximum coupling value
+    pub fn max(&self) -> f32 {
+        let mut m = self.data[0][0];
+        let nk = self.n * self.k;
+        for i in 0..nk {
+            for j in 0..nk {
+                m = m.max(self.data[i][j])
+            }
+        }
+        return m;
+    }
+
     /// Sets all coupling values to 0.0
     pub fn clear(&mut self) {
         let nk = self.n*self.k;
@@ -48,36 +72,20 @@ impl fmt::Display for Couplings {
     /// ```
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         let mut total: f32 = 0.0;
+        let power = self.max().log10().floor() as f32;
+        let factor:f32 = (10.0_f32).powf(power) as f32;
         for (i, row) in self.data.iter().enumerate() {
             for (j, val) in row.iter().enumerate() {
-                write!(f, "{:.3} ", val);
+                write!(f, "{:.3} ", val/factor);
                 total += val;
                 if j % self.k == (self.k - 1) { write!(f, "  "); }
             }
             writeln!(f, "");
             if i % self.k == (self.k - 1) { writeln!(f, "#"); }
         }
+        writeln!(f, "# scaled by: {factor}");
         writeln!(f, "# total: {total}");
         Ok(())
-    }
-}
-
-/// Initializes coupling diagonally.
-///
-pub fn init_couplings_diagonally(cplngs: &mut Couplings) {
-
-    let n = cplngs.n;
-    let k = cplngs.k;
-    for i in 1..n {
-        let ii = i * k;
-        for j in 0..k {
-            cplngs.data[ii + j][ii - k + j] = -1.0;
-            cplngs.data[ii - k + j][ii + j] = -1.0;
-        }
-    }
-    for j in 0..k {
-        cplngs.data[j][k + j] = -1.0;
-        cplngs.data[k + j][j] = -1.0;
     }
 }
 
@@ -106,7 +114,6 @@ impl EvolvingSequence {
         }
         let mut cplngs = Couplings::new(n, k);
         let observed = Couplings::new(n, k);
-        init_couplings_diagonally(&mut cplngs);
         let mut out = EvolvingSequence { total_energy: 0.0, sequence, index_to_aa, aa_to_index_map, cplngs, observed };
         out.sequence = out.encode_sequence(starting_sequence);
         out.total_energy = out.energy();
@@ -243,7 +250,7 @@ pub fn counts_from_msa(system: &EvolvingSequence, msa: &Vec<Sequence>) -> Coupli
         }
         n_seq += 1.0;
     }
-    cplngs.normalize(n_seq as f32);
+    cplngs.normalize(n_seq * n as f32);
 
     return cplngs;
 }
