@@ -13,7 +13,7 @@ mod couplings;
 mod sampling;
 mod observers;
 use crate::couplings::{Couplings, EvolvingSequence, counts_from_msa};
-use crate::sampling::{SweepSingleAA, SimpleMCSampler};
+use crate::sampling::{SweepSingleAA, SimpleMCSampler, SweepAllAA};
 use crate::observers::{EnergyHistogram, ObservedCounts, Observer, SequenceCollection};
 
 // Run 2GB1 case or FDX
@@ -172,8 +172,8 @@ pub fn main() {
 
     // ---------- Create a MC sweep and a MC sampler
     let mut sampler = SimpleMCSampler::new();
-    let sweep: SweepSingleAA = SweepSingleAA {};
-    // let sweep: SweepAllAA= SweepAllAA::new(seq.len(), alphabet.len());
+    // let sweep: SweepSingleAA = SweepSingleAA {};
+    let sweep: SweepAllAA= SweepAllAA::new(seq.len(), alphabet.len());
     sampler.add_sweep(Box::new(sweep));
 
     // sampler.inner_observers.push( Box::new(energy_hist));
@@ -185,7 +185,7 @@ pub fn main() {
     for _ in 0..n_cycles {
         // ---------- Forward step - infer counts
         sampler.run(&mut system, n_inner, n_outer);
-        system.observed.normalize((n_inner*n_outer) as f32 );
+        system.observed.normalize((n_inner * n_outer * system.seq_len() as u32 * 2) as f32);
         println!("{}", system.observed);
         system.observed.clear();
 
@@ -196,7 +196,7 @@ pub fn main() {
             None => {}
             Some(counts) => {
                 let mut obs_copy = counts.get_counts().clone();
-                obs_copy.normalize(counts.n_observed());
+                obs_copy.normalize(counts.n_observed() * system.seq_len() as f32);
                 let err = update_couplings(&target, &obs_copy,
                                            &prof, 0.001, newton_step, &mut system);
                 debug!("observed counts:\n{}", &counts.get_counts());

@@ -61,8 +61,8 @@ impl MCSweep for SweepSingleAA {
 }
 
 pub struct SweepAllAA {
-    pub observers: ObserversSet<S>,
     energies: Vec<f32>,
+    w: Vec<f32>,
     sweep_order: Vec<usize>,
 }
 
@@ -70,11 +70,11 @@ impl SweepAllAA {
 
     pub fn new(seq_len:usize, n_aa:usize) -> SweepAllAA {
 
-        let observers: ObserversSet<S> = ObserversSet::new();
         let energies: Vec<f32> = vec![0.0; n_aa];
+        let w: Vec<f32> = vec![0.0; n_aa];
         let mut sweep_order: Vec<usize> =  vec![0; seq_len];
         for i in 0..seq_len { sweep_order[i] = i }
-        SweepAllAA { observers, energies, sweep_order }
+        SweepAllAA { energies, w, sweep_order }
     }
 }
 
@@ -86,19 +86,51 @@ impl MCSweep for SweepAllAA {
 
         self.sweep_order.shuffle(&mut rng);
 
+        let mut tmp_i: Vec<usize> = vec![0; system.seq_len()];
+        for idx in 0..system.seq_len() {
+            tmp_i[idx] = idx * system.aa_cnt() + system.sequence[idx] as usize;
+        }
+
+        let n = system.seq_len();
+        let k = system.aa_cnt();
         for pos in &self.sweep_order {
             // ---------- energy value for each possible move, including self-aa
             system.energy_row(*pos, &mut self.energies);
             // ---------- Boltzmann weights
-            for i in 0..self.energies.len() { self.energies[i] = (-self.energies[i]).exp(); }
+            for i in 0..self.energies.len() { self.w[i] = (-self.energies[i]).exp(); }
+            let total_w: f32 = self.w.iter().sum();
 
             let old_aa: u8 = system.sequence[*pos];
-            let new_aa: u8 = rng.gen_range(0..system.aa_cnt()) as u8;
+            let new_aa: u8 = rng.gen_range(0..k) as u8;
+            let delta_w: f32 = self.w[new_aa as usize] / self.w[old_aa as usize];
 
-            let delta_en: f32 = self.energies[new_aa as usize] / self.energies[old_aa as usize];
-            if delta_en > 0.0 && (-delta_en).exp() < rng.gen_range(0.0..1.0) { continue }
+            // ---------- observe counts
+            for i in 0..n {             // --- for each "other" position in an chain sequence (MSA column)
+                let ii = tmp_i[i];      // --- get letter at that "other" pos
+                for aa_j in 0..k {      // --- for index of each letter that could happen in the mutated position
+                    system.observed.data[ii][pos * k + aa_j] += self.w[aa_j] / total_w;
+                    system.observed.data[pos * k + aa_j][ii] += self.w[aa_j] / total_w;
+                }
+            }
+
+            #[cfg(debug_assertions)]
+                {
+                    // ---------- test whether delta-energy is computed correctly
+                    let delta_en = self.energies[new_aa as usize] - self.energies[old_aa as usize];
+                    let delta_en_ctrl: f32 = system.delta_energy(*pos, new_aa);
+                    if (delta_en_ctrl-delta_en).abs() > 0.0001 {
+                        panic!("Incorrect delta-energy: {} vs {}, err is: {}", delta_en, delta_en_ctrl, (delta_en - delta_en_ctrl).abs());
+                    }
+                    // ---------- test whether Boltzmann factor for acceptance criterion is OK
+                    if (delta_w-(-delta_en_ctrl).exp()).abs() > 0.0001 {
+                        panic!("Incorrect boltzmann factor!");
+                    }
+                }
+            // ---------- Metropolis criterion on Boltzmann weights
+            if delta_w < 1.0 && delta_w < rng.gen_range(0.0..1.0) { continue }
             system.sequence[*pos] = new_aa;
-            system.total_energy += delta_en;
+            tmp_i[*pos] = (*pos) * system.aa_cnt() + new_aa as usize;
+            system.total_energy += self.energies[new_aa as usize] - self.energies[old_aa as usize];
         }
     }
 }
