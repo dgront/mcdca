@@ -99,22 +99,35 @@ impl MCSweep for SweepAllAA {
             // ---------- Boltzmann weights
             for i in 0..self.energies.len() { self.w[i] = (-self.energies[i]).exp(); }
             let total_w: f32 = self.w.iter().sum();
-
-            let old_aa: u8 = system.sequence[*pos];
-            let new_aa: u8 = rng.gen_range(0..k) as u8;
-            let delta_w: f32 = self.w[new_aa as usize] / self.w[old_aa as usize];
+            // ---------- Normalize the Boltzmann factors
+            self.w.iter_mut().for_each(|iel| *iel /= total_w);
 
             // ---------- observe counts
             for i in 0..n {             // --- for each "other" position in an chain sequence (MSA column)
                 let ii = tmp_i[i];      // --- get letter at that "other" pos
                 for aa_j in 0..k {      // --- for index of each letter that could happen in the mutated position
-                    system.observed.data[ii][pos * k + aa_j] += self.w[aa_j] / total_w;
-                    system.observed.data[pos * k + aa_j][ii] += self.w[aa_j] / total_w;
+                    system.observed.data[ii][pos * k + aa_j] += self.w[aa_j];
+                    system.observed.data[pos * k + aa_j][ii] += self.w[aa_j];
                 }
             }
 
+            // ---------- Symmetric acceptance criterion
+            let old_aa: u8 = system.sequence[*pos];
+            let rnd: f32 = rng.gen_range(0.0..1.0);
+            let mut new_aa: u8 = (system.aa_cnt() - 1) as u8;   // Just in case the loop below would not select the last letter
+            let mut sum: f32 = 0.0;
+            for i in 0..system.aa_cnt() {
+                sum += self.w[i];
+                if rnd < sum {
+                    new_aa = i as u8;
+                    break;
+                }
+            }
+
+            // ---------- Metropolis criterion on Boltzmann weights
             #[cfg(debug_assertions)]
                 {
+                    let delta_w: f32 = self.w[new_aa as usize] / self.w[old_aa as usize];
                     // ---------- test whether delta-energy is computed correctly
                     let delta_en = self.energies[new_aa as usize] - self.energies[old_aa as usize];
                     let delta_en_ctrl: f32 = system.delta_energy(*pos, new_aa);
@@ -126,8 +139,9 @@ impl MCSweep for SweepAllAA {
                         panic!("Incorrect boltzmann factor!");
                     }
                 }
-            // ---------- Metropolis criterion on Boltzmann weights
-            if delta_w < 1.0 && delta_w < rng.gen_range(0.0..1.0) { continue }
+            // --- It wouldn't be necessary to update stuff if we hadn't changed amino acid
+            if new_aa == old_aa { continue; }
+
             system.sequence[*pos] = new_aa;
             tmp_i[*pos] = (*pos) * system.aa_cnt() + new_aa as usize;
             system.total_energy += self.energies[new_aa as usize] - self.energies[old_aa as usize];

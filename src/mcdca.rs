@@ -16,9 +16,7 @@ use crate::couplings::{Couplings, EvolvingSequence, counts_from_msa};
 use crate::sampling::{SweepSingleAA, SimpleMCSampler, SweepAllAA};
 use crate::observers::{EnergyHistogram, ObservedCounts, Observer, SequenceCollection};
 
-// Run 2GB1 case or FDX
 // make it multi-core
-// implement recycked sampling
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -45,6 +43,9 @@ struct Args {
     /// number of optimization cycles
     #[clap(short, long, default_value_t = 0.01, short='n')]
     newton_step: f32,
+    /// fraction of pseudocounts added to both observed and target statistics
+    #[clap(short, long, default_value_t = 0.001, short='p')]
+    pseudo_fraction: f32,
 }
 
 pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, profile: &SeqProfile,
@@ -138,7 +139,7 @@ impl Display for SeqProfile {
 
 pub fn main() {
     let args = Args::parse();
-    if env::var("RUST_LOG").is_err() { env::set_var("RUST_LOG", "debug") }
+    if env::var("RUST_LOG").is_err() { env::set_var("RUST_LOG", "info") }
     env_logger::init();
 
     // ---------- Input sequence
@@ -153,6 +154,7 @@ pub fn main() {
     let n_outer: u32 = args.outer;
     let n_cycles: u32 = args.optcycles;
     let newton_step: f32 = args.newton_step;
+    let pseudo_fraction: f32 = args.pseudo_fraction;
 
     // ---------- Create sequence
     let alphabet: &str = if args.rna { "ACGU-" } else { "ACDEFGHIKLMNPQRSTVWY-" };
@@ -187,24 +189,27 @@ pub fn main() {
         sampler.run(&mut system, n_inner, n_outer);
         system.observed.normalize((n_inner * n_outer * system.seq_len() as u32 * 2) as f32);
         println!("{}", system.observed);
-        system.observed.clear();
 
-
+        // ---------- Newton optimisation step
         debug!("target counts:\n{}", &target);
         let observed_counts : Option<&ObservedCounts> = sampler.observers.get_observer("ObservedCounts");
         match observed_counts {
             None => {}
             Some(counts) => {
-                let mut obs_copy = counts.get_counts().clone();
-                obs_copy.normalize(counts.n_observed() * system.seq_len() as f32);
+                // ---------- Observed counts `obs_copy` should be used in Newton step with SweepSingleAA:
+                // let mut obs_copy = counts.get_counts().clone();
+                // obs_copy.normalize(counts.n_observed() * system.seq_len() as f32);
+                // ---------- When SweepAllAA is used, `system.observed` works better; they have been normalised 10 lines above
+                let mut obs_copy = system.observed.clone();
                 let err = update_couplings(&target, &obs_copy,
-                                           &prof, 0.001, newton_step, &mut system);
+                                           &prof, pseudo_fraction, newton_step, &mut system);
                 debug!("observed counts:\n{}", &counts.get_counts());
                 debug!("Normalized observed:\n{}",obs_copy);
                 debug!("couplings after update:\n{}", &system.cplngs);
-                debug!("ERROR: {}", err);
+                info!("ERROR: {}", err);
             }
         };
+        system.observed.clear();
 
         // ---------- Write observations
         sampler.observers.flush_observers();

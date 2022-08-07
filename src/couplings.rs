@@ -105,7 +105,6 @@ impl EvolvingSequence {
 
         let n = starting_sequence.len();
         let k = aa_order.len();
-        let cplngs = Couplings::new(n, k);
         let sequence: Vec<u8> = Vec::new();
         let index_to_aa = aa_order.chars().collect();
         let mut aa_to_index_map: HashMap<char, u8> = HashMap::new();
