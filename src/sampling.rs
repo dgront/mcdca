@@ -21,6 +21,7 @@ pub struct SimpleMCSampler<S: 'static> {
 
 impl<S> SimpleMCSampler<S> {
 
+    /// creates new sampler
     pub fn new() -> SimpleMCSampler<S> {
         let obs: ObserversSet<S> = ObserversSet::new();
         SimpleMCSampler {sweeps: Vec::new(), observers: obs }
