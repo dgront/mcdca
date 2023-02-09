@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use bioshell_numerical::statistics::Histogram;
+use bioshell_statistics::Histogram;
 use bioshell_core::utils::{out_writer, writes_to_screen};
 
 // ---------- generic traits and types that should be relocated to bioshell
@@ -73,9 +73,7 @@ pub struct PrintSequence;
 impl Observer for PrintSequence {
     type O = EvolvingSequence;
 
-    fn observe(&mut self, obj: &Self::O) {
-        println!("{:4} {}", obj.energy(), obj.decode_sequence());
-    }
+    fn observe(&mut self, obj: &Self::O) { println!("{} {}", obj.total_energy, obj.decode_sequence()); }
 
     fn flush(&mut self) {}
 
@@ -96,10 +94,10 @@ pub struct ObservedCounts {
 
 impl ObservedCounts {
 
-    pub fn new(seq_len: usize, n_aa_types: usize, out_name:&str) -> ObservedCounts {
-        let mut tmp_i: Vec<usize> = vec![0; seq_len];
+    pub fn new(system: &EvolvingSequence, out_name:&str) -> ObservedCounts {
+        let mut tmp_i: Vec<usize> = vec![0; system.seq_len()];
         ObservedCounts {
-            counts: Couplings::new(seq_len, n_aa_types),
+            counts: Couplings::new(system.seq_len(), system.aa_cnt()),
             output: out_name.parse().unwrap(),
             n_observ: 0.0,
             tmp_i
@@ -124,19 +122,19 @@ impl Observer for ObservedCounts {
     fn observe(&mut self, obj: &Self::O) {
 
         self.n_observ += 1.0;
-        for idx in 0..self.counts.n {
-            self.tmp_i[idx] = idx * self.counts.k + obj.sequence[idx] as usize;
+        for idx in 0..self.counts.seq_length {
+            self.tmp_i[idx] = idx * self.counts.k_aa_types + obj.sequence[idx] as usize;
         }
-        for i in 0..self.counts.n {
+        for i in 0..self.counts.seq_length {
             let ii = self.tmp_i[i];
-            for j in 0..self.counts.n {
+            for j in 0..self.counts.seq_length {
                 self.counts.data[ii][self.tmp_i[j]] += 1.0;
             }
         }
     }
 
     fn flush(&mut self) {
-        let mut out_writer = out_writer(&self.output.as_str());
+        let mut out_writer = out_writer(&self.output.as_str(),true);
         if self.n_observ > 0.0 { self.counts.normalize(self.n_observ); }
         out_writer.write(format!("{}", self.counts).as_bytes()).ok();
         self.counts.clear();
@@ -151,7 +149,7 @@ impl Observer for ObservedCounts {
 
 /// Helper struct to store a single sequence data
 struct SequenceEntry {
-    energy: f32,
+    energy: f64,
     sequence: String
 }
 
@@ -185,7 +183,7 @@ impl Observer for SequenceCollection {
 
     /// Copy the current sequence and energy from an observed `EvolvingSequence` instance
     fn observe(&mut self, obj: &Self::O) {
-        self.sequences.push(SequenceEntry{energy:obj.energy(), sequence:obj.decode_sequence()})
+        self.sequences.push(SequenceEntry{energy:obj.total_energy, sequence:obj.decode_sequence()})
     }
 
     /// Stores observations in a file or prints on the screen.
@@ -200,7 +198,7 @@ impl Observer for SequenceCollection {
             self.flush_id += 1;
             format!("{}-{}",&self.output, self.flush_id)
         };
-        let mut out_writer = out_writer(fname.as_str());
+        let mut out_writer = out_writer(fname.as_str(), true);
         for s in self.sequences.iter() {
             out_writer.write(format!("{:3} {}\n", s.energy, s.sequence).as_bytes()).ok();
         }
@@ -248,7 +246,7 @@ impl Observer for EnergyHistogram {
     }
 
     fn flush(&mut self) {
-        let mut out_writer = out_writer(&self.output.as_str());
+        let mut out_writer = out_writer(&self.output.as_str(), true);
         out_writer.write(format!("{}", self.stats).as_bytes()).ok() ;
     }
 

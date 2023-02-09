@@ -1,12 +1,13 @@
 use std::fmt;
-use std::collections::HashMap;
 
 use bioshell_core::sequence::Sequence;
+use crate::EvolvingSequence;
+// use crate::evolving_sequence::EvolvingSequence;
 
 #[derive(Clone, Debug)]
 pub struct Couplings {
-    pub n: usize,
-    pub k: usize,
+    pub seq_length: usize,
+    pub k_aa_types: usize,
     pub data: Vec<Vec<f32>>,
 }
 
@@ -15,7 +16,7 @@ impl Couplings {
     pub fn new(seq_len: usize, n_aa_types: usize) -> Couplings {
         let size: usize = seq_len * n_aa_types;
         let m = vec![vec![0.0; size]; size];
-        Couplings { n: seq_len, k: n_aa_types, data: m }
+        Couplings { seq_length: seq_len, k_aa_types: n_aa_types, data: m }
     }
 
     pub fn normalize(&mut self, cnt: f32) {
@@ -25,8 +26,9 @@ impl Couplings {
     /// Find the minimum coupling value
     pub fn min(&self) -> f32 {
         let mut m = self.data[0][0];
-        let nk = self.n * self.k;
+        let nk = self.seq_length * self.k_aa_types;
         for i in 0..nk {
+            // use this: .iter().min().unwrap();
             for j in 0..nk {
                 m = m.min(self.data[i][j])
             }
@@ -37,7 +39,7 @@ impl Couplings {
     /// Find the maximum coupling value
     pub fn max(&self) -> f32 {
         let mut m = self.data[0][0];
-        let nk = self.n * self.k;
+        let nk = self.seq_length * self.k_aa_types;
         for i in 0..nk {
             for j in 0..nk {
                 m = m.max(self.data[i][j])
@@ -48,7 +50,7 @@ impl Couplings {
 
     /// Sets all coupling values to 0.0
     pub fn clear(&mut self) {
-        let nk = self.n*self.k;
+        let nk = self.seq_length *self.k_aa_types;
         for i in 0..nk {
             for j in 0..nk {
                 self.data[i][j] = 0.0;
@@ -76,12 +78,12 @@ impl fmt::Display for Couplings {
         let factor:f32 = (10.0_f32).powf(power) as f32;
         for (i, row) in self.data.iter().enumerate() {
             for (j, val) in row.iter().enumerate() {
-                write!(f, "{:.3} ", val/factor);
+                write!(f, "{:5.2} ", val/factor);
                 total += val;
-                if j % self.k == (self.k - 1) { write!(f, "  "); }
+                if j % self.k_aa_types == (self.k_aa_types - 1) { write!(f, "  "); }
             }
             writeln!(f, "");
-            if i % self.k == (self.k - 1) { writeln!(f, "#"); }
+            if i % self.k_aa_types == (self.k_aa_types - 1) { writeln!(f, "#"); }
         }
         writeln!(f, "# scaled by: {factor}");
         writeln!(f, "# total: {total}");
@@ -90,8 +92,45 @@ impl fmt::Display for Couplings {
 }
 
 
-// -----------------------------------------------------
-pub struct EvolvingSequence {
+
+
+/// Initializes coupling from a given set of sequences.
+///
+pub fn counts_from_msa(system: &EvolvingSequence, msa: &Vec<Sequence>) -> Couplings {
+
+    let n = system.seq_len();
+    let k = system.res_mapping.size();
+    let mut cplngs: Couplings = Couplings::new(n, k);
+
+    let mut tmp_i: Vec<usize> = vec![0; n];       // Temporary indexes aa->cplngs matrix
+    let mut n_seq: f32 = 0.0;
+    for sequence in msa {
+        if sequence.len() != n {
+            eprintln!("\nSequence of incorrect length! Is: {}, should be: {}. The sequence skipped::\n {}\n",
+                      sequence.len(), n, sequence);
+            continue;
+        }
+        // --- for every position in a sequence, find the location of that AA in the big cplngs matrix
+        // --- This is done in linear time here and called below in a square loop
+        for idx in 0..n {
+            tmp_i[idx] = idx * k + system.res_mapping.encode_letter(&sequence.char(idx)) as usize;
+        }
+        // --- Count each pair coincidence
+        for i_pos in 1..n {
+            for j_pos in 0..i_pos {
+                cplngs.data[tmp_i[i_pos]][tmp_i[j_pos]] += 1.0;
+                cplngs.data[tmp_i[j_pos]][tmp_i[i_pos]] += 1.0;
+            }
+        }
+        n_seq += 1.0;
+    }
+    cplngs.normalize(n_seq * n as f32);
+
+    return cplngs;
+}
+
+/*
+pub struct EvolvingSequence2 {
     pub total_energy: f32,
     pub sequence: Vec<u8>,
     index_to_aa: Vec<char>,
@@ -100,8 +139,8 @@ pub struct EvolvingSequence {
     pub observed: Couplings,
 }
 
-impl EvolvingSequence {
-    pub fn new(starting_sequence: &String, aa_order: &str) -> EvolvingSequence {
+impl EvolvingSequence2 {
+    pub fn new(starting_sequence: &String, aa_order: &str) -> EvolvingSequence2 {
 
         let n = starting_sequence.len();
         let k = aa_order.len();
@@ -113,16 +152,16 @@ impl EvolvingSequence {
         }
         let mut cplngs = Couplings::new(n, k);
         let observed = Couplings::new(n, k);
-        let mut out = EvolvingSequence { total_energy: 0.0, sequence, index_to_aa, aa_to_index_map, cplngs, observed };
+        let mut out = EvolvingSequence2 { total_energy: 0.0, sequence, index_to_aa, aa_to_index_map, cplngs, observed };
         out.sequence = out.encode_sequence(starting_sequence);
         out.total_energy = out.energy();
 
         return out;
     }
 
-    pub fn seq_len(&self) -> usize { self.cplngs.n }
+    pub fn seq_len(&self) -> usize { self.cplngs.seq_length }
 
-    pub fn aa_cnt(&self) -> usize { self.cplngs.k }
+    pub fn aa_cnt(&self) -> usize { self.cplngs.k_aa_types }
 
     /// Convert a given amino acid character to its internal index
     pub fn aa_to_index(&self, aa:&char) -> u8 {
@@ -206,7 +245,7 @@ impl EvolvingSequence {
 
     pub fn energy_row(&self, pos: usize, energy: &mut Vec<f32>)  {
 
-        for aa_i in 0..self.cplngs.k { energy[aa_i] = 0.0; }
+        for aa_i in 0..self.cplngs.k_aa_types { energy[aa_i] = 0.0; }
         let pos_i: usize = pos * self.aa_cnt();
         let mut pos_j: usize = 0;
         for aa_j in self.sequence.iter() {
@@ -218,38 +257,4 @@ impl EvolvingSequence {
         }
     }
 }
-
-/// Initializes coupling from a given set of sequences.
-///
-pub fn counts_from_msa(system: &EvolvingSequence, msa: &Vec<Sequence>) -> Couplings {
-
-    let n = system.seq_len();
-    let k = system.aa_cnt();
-    let mut cplngs: Couplings = Couplings::new(n, k);
-
-    let mut tmp_i: Vec<usize> = vec![0; n];       // Temporary indexes aa->cplngs matrix
-    let mut n_seq: f32 = 0.0;
-    for sequence in msa {
-        if sequence.len() != n {
-            eprintln!("\nSequence of incorrect length! Is: {}, should be: {}. The sequence skipped::\n {}\n",
-                      sequence.len(), n, sequence);
-            continue;
-        }
-        // --- for every position in a sequence, find the location of that AA in the big cplngs matrix
-        // --- This is done in linear time here and called below in a square loop
-        for idx in 0..n {
-            tmp_i[idx] = idx * k + system.aa_to_index(&sequence.char(idx)) as usize;
-        }
-        // --- Count each pair coincidence
-        for i_pos in 1..n {
-            for j_pos in 0..i_pos {
-                cplngs.data[tmp_i[i_pos]][tmp_i[j_pos]] += 1.0;
-                cplngs.data[tmp_i[j_pos]][tmp_i[i_pos]] += 1.0;
-            }
-        }
-        n_seq += 1.0;
-    }
-    cplngs.normalize(n_seq * n as f32);
-
-    return cplngs;
-}
+*/
