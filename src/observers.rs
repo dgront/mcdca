@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use bioshell_numerical::statistics::Histogram;
+use bioshell_statistics::Histogram;
 use bioshell_core::utils::{out_writer, writes_to_screen};
 
 // ---------- generic traits and types that should be relocated to bioshell
@@ -136,7 +136,7 @@ impl Observer for ObservedCounts {
     }
 
     fn flush(&mut self) {
-        let mut out_writer = out_writer(&self.output.as_str());
+        let mut out_writer = out_writer(&self.output.as_str(), true);
         if self.n_observ > 0.0 { self.counts.normalize(self.n_observ); }
         out_writer.write(format!("{}", self.counts).as_bytes()).ok();
         self.counts.clear();
@@ -200,7 +200,7 @@ impl Observer for SequenceCollection {
             self.flush_id += 1;
             format!("{}-{}",&self.output, self.flush_id)
         };
-        let mut out_writer = out_writer(fname.as_str());
+        let mut out_writer = out_writer(fname.as_str(), true);
         for s in self.sequences.iter() {
             out_writer.write(format!("{:3} {}\n", s.energy, s.sequence).as_bytes()).ok();
         }
@@ -248,7 +248,7 @@ impl Observer for EnergyHistogram {
     }
 
     fn flush(&mut self) {
-        let mut out_writer = out_writer(&self.output.as_str());
+        let mut out_writer = out_writer(&self.output.as_str(), true);
         out_writer.write(format!("{}", self.stats).as_bytes()).ok() ;
     }
 
