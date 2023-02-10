@@ -89,13 +89,8 @@ pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, 
                         continue;
                     }
                     error += delta*delta;
-                    println!("{} {} {} {} : {:6.3} {:6.3} {:6.3} {:6.3} {}",
-                             i_pos, j_pos, i_aa, j_aa, target_val, observed_val, delta, couplings.data[i_ind][j_ind], error);
                     delta = delta / (2.0 * observed_val + pseudo);
                     delta *= newton_step;
-                        // if i_pos == 0 && j_pos == 1 && i_aa == 0 && j_aa == 0 {
-                        //     println!("{} {} {} {} : {} {} {} ", i_pos, j_pos, i_aa, j_aa, target_val, observed_val, delta);
-                        // }
                     if delta.abs() > 10000.0 {
                         println!("{:3} {:2} {:3} {:2}  should be: {:5.3}  observed: {:5.3}, J: {:5.3} -> {:5.3} by {} err {}",
                                  i_pos, i_aa, j_pos, j_aa,
@@ -107,7 +102,6 @@ pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, 
             }
         }
     }
-    println!("");
     return error;
 }
 
@@ -115,7 +109,7 @@ pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, 
 pub fn main() {
 
     let args = Args::parse();
-    if env::var("RUST_LOG").is_err() { env::set_var("RUST_LOG", "info") }
+    if env::var("RUST_LOG").is_err() { env::set_var("RUST_LOG", "debug") }
     env_logger::init();
 
     // ---------- Input sequence
@@ -144,7 +138,7 @@ pub fn main() {
     let mut energy = CouplingEnergy{cplngs: target_counts.clone() };
     system.total_energy = energy.energy(&system);
 
-    // ---------- Create a MC mover a MC sampler
+    // ---------- Create an MC sampler and plug a mover into it
     let mut sampler: IsothermalMC<EvolvingSequence, CouplingEnergy> = IsothermalMC::new(1.0);
     sampler.add_mover(Box::new(FlipOnePos::new()));
 
@@ -174,98 +168,11 @@ pub fn main() {
         obs_freq.normalize();
         let observed_counts = obs_freq.get_counts();
         debug!("Normalized observed:\n{}",observed_counts);
-        // ---------- Observed counts `obs_copy` should be used in Newton step with SweepSingleAA:
-        // let mut obs_copy = counts.get_counts().clone();
-        // obs_copy.normalize(counts.n_observed() * system.seq_len() as f32);
-        // ---------- When SweepAllAA is used, `system.observed` works better; they have been normalised 10 lines above
-        // let mut obs_copy = system.observed.clone();
         let err = update_couplings(&target_counts, &observed_counts,
                                    &prof, pseudo_fraction, newton_step, &mut energy.cplngs);
-        // debug!("couplings after update:\n{}", &energy.cplngs);
         info!("ERROR: {}", err);
         // ---------- recalculate energy - the old value became obsolete when couplings were changed
         system.total_energy = energy.energy(&system);
     }
 
 }
-
-/*
-pub fn main() {
-    let args = Args::parse();
-    if env::var("RUST_LOG").is_err() { env::set_var("RUST_LOG", "info") }
-    env_logger::init();
-
-    // ---------- Input sequence
-    let seq: String = from_fasta_file(&args.fasta)[0].to_string();
-
-    // ---------- Read the target MSA and cleanup insertions
-    let mut msa = from_fasta_file(&args.msa);
-    a3m_to_fasta(&mut msa, &A3mConversionMode::RemoveSmallCaps);
-
-    // ---------- Other settings
-    let n_inner: u32 = args.inner;
-    let n_outer: u32 = args.outer;
-    let n_cycles: u32 = args.optcycles;
-    let newton_step: f32 = args.newton_step;
-    let pseudo_fraction: f32 = args.pseudo_fraction;
-
-    // ---------- Create sequence
-    let alphabet: &str = if args.rna { "ACGU-" } else { "ACDEFGHIKLMNPQRSTVWY-" };
-    let mut system: EvolvingSequence2 = EvolvingSequence2::new(&seq, alphabet);
-
-    // ---------- Create couplings and sequence profile
-    let target = counts_from_msa(&system, &mut msa);
-    let mut w = File::create("target_msa_counts.dat").unwrap();
-    writeln!(&mut w, "{}", target).unwrap();
-    let prof: SeqProfile = SeqProfile::new(&system, &msa);
-    println!("{}", &prof);
-
-    // ---------- Observers
-    let collect_seq = SequenceCollection::new("sequences", true);
-    // let energy_hist = EnergyHistogram::new(1.0,"en.dat");
-    let coupled_pos = ObservedCounts::new(system.seq_len(), system.aa_cnt(), "observed_counts.dat");
-
-    // ---------- Create a MC sweep and a MC sampler
-    let mut sampler = SimpleMCSampler::new();
-    // let sweep: SweepSingleAA = SweepSingleAA {};
-    let sweep: SweepAllAA= SweepAllAA::new(seq.len(), alphabet.len());
-    sampler.add_sweep(Box::new(sweep));
-
-    // sampler.inner_observers.push( Box::new(energy_hist));
-    sampler.observers.add_observer( Box::new(coupled_pos), 1);
-    sampler.observers.add_observer( Box::new(collect_seq), n_inner);
-
-
-    // ---------- Run the simulation!
-    for _ in 0..n_cycles {
-        // ---------- Forward step - infer counts
-        sampler.run(&mut system, n_inner, n_outer);
-        system.observed.normalize((n_inner * n_outer * system.seq_len() as u32 * 2) as f32);
-        println!("{}", system.observed);
-
-        // ---------- Newton optimisation step
-        debug!("target counts:\n{}", &target);
-        let observed_counts : Option<&ObservedCounts> = sampler.observers.get_observer("ObservedCounts");
-        match observed_counts {
-            None => {}
-            Some(counts) => {
-                // ---------- Observed counts `obs_copy` should be used in Newton step with SweepSingleAA:
-                // let mut obs_copy = counts.get_counts().clone();
-                // obs_copy.normalize(counts.n_observed() * system.seq_len() as f32);
-                // ---------- When SweepAllAA is used, `system.observed` works better; they have been normalised 10 lines above
-                let mut obs_copy = system.observed.clone();
-                let err = update_couplings(&target, &obs_copy,
-                                           &prof, pseudo_fraction, newton_step, &mut system);
-                debug!("observed counts:\n{}", &counts.get_counts());
-                debug!("Normalized observed:\n{}",obs_copy);
-                debug!("couplings after update:\n{}", &system.cplngs);
-                info!("ERROR: {}", err);
-            }
-        };
-        system.observed.clear();
-
-        // ---------- Write observations
-        sampler.observers.flush_observers();
-    }
-}
-*/

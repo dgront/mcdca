@@ -125,10 +125,11 @@ impl Observer for ObservedCounts {
         for idx in 0..self.counts.seq_length {
             self.tmp_i[idx] = idx * self.counts.k_aa_types + obj.sequence[idx] as usize;
         }
-        for i in 0..self.counts.seq_length {
-            let ii = self.tmp_i[i];
-            for j in 0..self.counts.seq_length {
-                self.counts.data[ii][self.tmp_i[j]] += 1.0;
+
+        for i_pos in 1..self.counts.seq_length {
+            for j_pos in 0..i_pos {
+                self.counts.data[self.tmp_i[i_pos]][self.tmp_i[j_pos]] += 0.5;
+                self.counts.data[self.tmp_i[j_pos]][self.tmp_i[i_pos]] += 0.5;
             }
         }
     }
