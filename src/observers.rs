@@ -73,9 +73,7 @@ pub struct PrintSequence;
 impl Observer for PrintSequence {
     type O = EvolvingSequence;
 
-    fn observe(&mut self, obj: &Self::O) {
-        println!("{:4} {}", obj.energy(), obj.decode_sequence());
-    }
+    fn observe(&mut self, obj: &Self::O) { println!("{} {}", obj.total_energy, obj.decode_sequence()); }
 
     fn flush(&mut self) {}
 
@@ -96,10 +94,10 @@ pub struct ObservedCounts {
 
 impl ObservedCounts {
 
-    pub fn new(seq_len: usize, n_aa_types: usize, out_name:&str) -> ObservedCounts {
-        let mut tmp_i: Vec<usize> = vec![0; seq_len];
+    pub fn new(system: &EvolvingSequence, out_name:&str) -> ObservedCounts {
+        let mut tmp_i: Vec<usize> = vec![0; system.seq_len()];
         ObservedCounts {
-            counts: Couplings::new(seq_len, n_aa_types),
+            counts: Couplings::new(system.seq_len(), system.aa_cnt()),
             output: out_name.parse().unwrap(),
             n_observ: 0.0,
             tmp_i
@@ -124,19 +122,20 @@ impl Observer for ObservedCounts {
     fn observe(&mut self, obj: &Self::O) {
 
         self.n_observ += 1.0;
-        for idx in 0..self.counts.n {
-            self.tmp_i[idx] = idx * self.counts.k + obj.sequence[idx] as usize;
+        for idx in 0..self.counts.seq_length {
+            self.tmp_i[idx] = idx * self.counts.k_aa_types + obj.sequence[idx] as usize;
         }
-        for i in 0..self.counts.n {
-            let ii = self.tmp_i[i];
-            for j in 0..self.counts.n {
-                self.counts.data[ii][self.tmp_i[j]] += 1.0;
+
+        for i_pos in 1..self.counts.seq_length {
+            for j_pos in 0..i_pos {
+                self.counts.data[self.tmp_i[i_pos]][self.tmp_i[j_pos]] += 0.5;
+                self.counts.data[self.tmp_i[j_pos]][self.tmp_i[i_pos]] += 0.5;
             }
         }
     }
 
     fn flush(&mut self) {
-        let mut out_writer = out_writer(&self.output.as_str(), true);
+        let mut out_writer = out_writer(&self.output.as_str(),true);
         if self.n_observ > 0.0 { self.counts.normalize(self.n_observ); }
         out_writer.write(format!("{}", self.counts).as_bytes()).ok();
         self.counts.clear();
@@ -151,7 +150,7 @@ impl Observer for ObservedCounts {
 
 /// Helper struct to store a single sequence data
 struct SequenceEntry {
-    energy: f32,
+    energy: f64,
     sequence: String
 }
 
@@ -185,7 +184,7 @@ impl Observer for SequenceCollection {
 
     /// Copy the current sequence and energy from an observed `EvolvingSequence` instance
     fn observe(&mut self, obj: &Self::O) {
-        self.sequences.push(SequenceEntry{energy:obj.energy(), sequence:obj.decode_sequence()})
+        self.sequences.push(SequenceEntry{energy:obj.total_energy, sequence:obj.decode_sequence()})
     }
 
     /// Stores observations in a file or prints on the screen.

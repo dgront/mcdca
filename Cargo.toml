@@ -9,8 +9,11 @@ log = "0.4.0"
 env_logger = "0.9.0"
 clap = { version = "3.1.18", features = ["derive"] }
 bioshell-core = { path = "../bioshell4/bioshell-core" }
+bioshell-sim = { path = "../bioshell4/bioshell-sim" }
 bioshell-numerical = { path = "../bioshell4/bioshell-numerical" }
 bioshell-statistics = { path = "../bioshell4/bioshell-statistics" }
+bioshell-montecarlo = { path = "../bioshell4/bioshell-montecarlo" }
+
 [[bin]]
 name = "mcdca"
 path = "src/mcdca.rs"
