@@ -85,19 +85,17 @@ pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, 
                     let observed_val = observed_counts.data[i_ind][j_ind] as f64;
                     let mut delta = target_val - observed_val;
                     if observed_val.abs() < 1e-7 && target_val.abs() < 1e-7 {
-                        couplings.data[i_ind][j_ind] = 0.0;
                         continue;
                     }
                     error += delta*delta;
-                    delta = delta / (2.0 * observed_val + pseudo);
-                    delta *= newton_step;
+                    let step = newton_step * delta / (2.0 * observed_val + pseudo);
                     if delta.abs() > 10000.0 {
-                        println!("{:3} {:2} {:3} {:2}  should be: {:5.3}  observed: {:5.3}, J: {:5.3} -> {:5.3} by {} err {}",
+                        println!("{:3} {:2} {:3} {:2}  should be: {:5.3}  observed: {:5.3}, J: {:5.3} -> {:5.3} by {}, delta: {}, err: {}",
                                  i_pos, i_aa, j_pos, j_aa,
                                  target_val, observed_val,
-                                 couplings.data[i_ind][j_ind], couplings.data[i_ind][j_ind] as f64 - delta, delta, delta * delta);
+                                 couplings.data[i_ind][j_ind], couplings.data[i_ind][j_ind] as f64 - step, step, delta, delta * delta);
                     }
-                    couplings.data[i_ind][j_ind] -= delta as f32;
+                    couplings.data[i_ind][j_ind] -= step as f32;
                 }
             }
         }
@@ -149,7 +147,8 @@ pub fn main() {
     let mut recent_acceptance = AcceptanceStatistics::default();
     for i_newt in 0..n_cycles {
         // ---------- Observers
-        let mut collect_seq = SequenceCollection::new("sequences", true);
+
+        let mut collect_seq = SequenceCollection::new(format!("sequences-{}.dat", i_newt).as_str(), false);
         let mut obs_freq = ObservedCounts::new(&system, "observed_counts.dat");
 
         for i in 0..args.outer {
@@ -158,10 +157,11 @@ pub fn main() {
             let f_succ = stats.recent_success_rate(&recent_acceptance);
             recent_acceptance = stats;
             // obs_seq.observe(&system);
-            // collect_seq.observe(&system);
+            collect_seq.observe(&system);
             obs_freq.observe(&system);
             // println!("{:6} {:9.3} {:5.3} {:.2?}", i, energy.energy(&system) as f64, f_succ, start.elapsed());
         }
+        collect_seq.flush();
         // ---------- Newton optimisation step
         debug!("target counts:\n{}", &target_counts);
         debug!("observed counts:\n{}", &obs_freq.get_counts());
