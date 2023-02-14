@@ -2,7 +2,7 @@ use std::fmt;
 
 use bioshell_core::sequence::Sequence;
 use crate::EvolvingSequence;
-// use crate::evolving_sequence::EvolvingSequence;
+use crate::pseudocounts::Pseudocounts;
 
 #[derive(Clone, Debug)]
 pub struct Couplings {
@@ -80,13 +80,13 @@ impl fmt::Display for Couplings {
             for (j, val) in row.iter().enumerate() {
                 write!(f, "{:5.2} ", val/factor);
                 total += val;
-                if j % self.k_aa_types == (self.k_aa_types - 1) { write!(f, "  "); }
+                if j % self.k_aa_types == (self.k_aa_types - 1) { write!(f, "  ").ok(); }
             }
             writeln!(f, "");
-            if i % self.k_aa_types == (self.k_aa_types - 1) { writeln!(f, "#"); }
+            if i % self.k_aa_types == (self.k_aa_types - 1) { writeln!(f, "#").ok(); }
         }
-        writeln!(f, "# scaled by: {factor}");
-        writeln!(f, "# total: {total}");
+        writeln!(f, "# scaled by: {factor}").ok();
+        writeln!(f, "# total: {total}").ok();
         Ok(())
     }
 }
@@ -127,4 +127,47 @@ pub fn counts_from_msa(system: &EvolvingSequence, msa: &Vec<Sequence>) -> Coupli
     cplngs.normalize(n_seq as f32);   // --- times 2.0 because sequences are loaded twice: to upper and lower triangle of the matrix
 
     return cplngs;
+}
+
+
+/// Update the `couplings` matrix to lower the distance between expected and target observations
+///
+/// ```math
+/// j^{k,l}_{A,B} = j^{k,l}_{A,B} - \text{c} * \frac{p^{k,l}_{A,B} - \hat{p}^{k,l}_{A,B}}{p^{k,l}_{A,B}}
+/// ```
+pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, pseudocounts: &Pseudocounts,
+                        newton_step: f64, simulated_couplings: &mut Couplings) -> f64 {
+
+
+    let mut error: f64 = 0.0;
+    let k_aa = target_counts.k_aa_types;
+    let n_res = target_counts.seq_length;
+    for i_pos in 0..n_res {
+        for i_aa in 0..k_aa {
+            let i_ind = i_pos * k_aa + i_aa;
+            for j_pos in 0..n_res {
+                if i_pos == j_pos { continue }
+                for j_aa in 0..k_aa {
+                    let mut pseudo: f64 = pseudocounts.pseudo_fraction(i_pos, i_aa, j_pos, j_aa);
+                    let j_ind = j_pos * k_aa + j_aa;
+                    let target_val = target_counts.data[i_ind][j_ind] as f64;
+                    let observed_val = observed_counts.data[i_ind][j_ind] as f64;
+                    let mut delta = target_val - observed_val;
+                    if observed_val.abs() < 1e-7 && target_val.abs() < 1e-7 {
+                        continue;
+                    }
+                    error += delta*delta;
+                    let step = newton_step * delta / (2.0 * observed_val + pseudo);
+                    if delta.abs() > 10000.0 {
+                        println!("{:3} {:2} {:3} {:2}  should be: {:5.3}  observed: {:5.3}, J: {:5.3} -> {:5.3} by {}, delta: {}, err: {}",
+                                 i_pos, i_aa, j_pos, j_aa,
+                                 target_val, observed_val,
+                                 simulated_couplings.data[i_ind][j_ind], simulated_couplings.data[i_ind][j_ind] as f64 - step, step, delta, delta * delta);
+                    }
+                    simulated_couplings.data[i_ind][j_ind] -= step as f32;
+                }
+            }
+        }
+    }
+    return error;
 }

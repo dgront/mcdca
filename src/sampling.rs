@@ -2,11 +2,10 @@ use std::ops::Range;
 use rand::{Rng, SeedableRng};
 
 use bioshell_montecarlo::{AcceptanceCriterion, AcceptanceStatistics, Mover};
-use bioshell_sim::Energy;
+use bioshell_sim::{Observer, ObserversSet, Energy};
 use rand::rngs::SmallRng;
 use crate::coupling_energy::CouplingEnergy;
 
-use crate::observers::{Observer, ObserversSet};
 use crate::evolving_sequence::EvolvingSequence;
 
 pub struct FlipOnePos {

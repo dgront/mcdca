@@ -1,5 +1,7 @@
 use std::any::Any;
+use std::slice::Iter;
 
+use bioshell_sim::{Observer, ObserversSet};
 use bioshell_statistics::Histogram;
 use bioshell_core::utils::{out_writer, writes_to_screen};
 
@@ -7,77 +9,17 @@ use bioshell_core::utils::{out_writer, writes_to_screen};
 
 use crate::{Couplings, EvolvingSequence};
 
-/// Observer takes observations of a system of a generic type `O`
-pub trait Observer {
-    /// The type of objects being observed byt his observer
-    type O;
-    /// Takes observations
-    fn observe(&mut self, object: &Self::O);
-    fn flush(&mut self);
-    fn close(&mut self);
-    fn name(&self) -> &str;
-    fn as_any(&self) -> &dyn Any;
-}
 
-/// A set of observers, that observe a system of a generic type `S`
-///
-///
-pub struct  ObserversSet<S: 'static> {
-    n_called: u32,
-    observers: Vec<Box<dyn Observer<O = S>>>,
-    lag_times : Vec<u32>
-}
-
-impl<S> ObserversSet<S> {
-
-    pub fn new() -> ObserversSet<S> {
-        ObserversSet {n_called: 0, observers:Vec::new(), lag_times:Vec::new() }
-    }
-
-    pub fn add_observer(&mut self, o: Box<dyn Observer<O=S>>, lag_time: u32) {
-        self.observers.push(o);
-        self.lag_times.push(lag_time);
-    }
-
-    pub fn get_observers(&self) -> &Vec<Box<dyn Observer<O=S>>> { &self.observers }
-
-    pub fn observe(&mut self, object: &S) {
-        for i in 0..self.observers.len() {
-            if self.n_called % self.lag_times[i] == 0 {
-                self.observers[i].observe(object);
-            }
-        }
-        self.n_called += 1;
-    }
-
-    /// Call `flush()` method for all observers this sampler posses
-    /// This typically writes data to streams and clears buffers
-    pub fn flush_observers(&mut self) { for o in self.observers.iter_mut() { o.flush(); } }
-
-    /// Call `close()` method for all observers this sampler posses
-    /// This typically closes all opened files, computes statistics etc.
-    pub fn close_observers(&mut self) { for o in self.observers.iter_mut() { o.close(); } }
-
-    pub fn get_observer<T: 'static>(&self, name: &str) -> Option<&T> {
-        for o in self.get_observers() {
-            if name == o.name() { return o.as_any().downcast_ref::<T>(); }
-        }
-
-        return None;
-    }
-}
 
 // ---------- DCA-related stuff
 pub struct PrintSequence;
 
 impl Observer for PrintSequence {
-    type O = EvolvingSequence;
+    type S = EvolvingSequence;
 
-    fn observe(&mut self, obj: &Self::O) { println!("{} {}", obj.total_energy, obj.decode_sequence()); }
+    fn observe(&mut self, obj: &Self::S) { println!("{} {}", obj.total_energy, obj.decode_sequence()); }
 
     fn flush(&mut self) {}
-
-    fn close(&mut self) {}
 
     fn name(&self) -> &str { "PrintSequence" }
 
@@ -117,9 +59,9 @@ impl ObservedCounts {
 }
 
 impl Observer for ObservedCounts {
-    type O = EvolvingSequence;
+    type S = EvolvingSequence;
 
-    fn observe(&mut self, obj: &Self::O) {
+    fn observe(&mut self, obj: &Self::S) {
 
         self.n_observ += 1.0;
         for idx in 0..self.counts.seq_length {
@@ -141,8 +83,6 @@ impl Observer for ObservedCounts {
         self.counts.clear();
         self.n_observ = 0.0;
     }
-
-    fn close(&mut self) {}
 
     fn name(&self) -> &str { "ObservedCounts" }
     fn as_any(&self) -> &dyn Any { self }
@@ -177,13 +117,19 @@ impl SequenceCollection {
     pub fn new(out_name:&str, flush_separately:bool) -> SequenceCollection {
         SequenceCollection{flush_separately, flush_id:0, output: out_name.parse().unwrap(), sequences: Vec::new()}
     }
+
+    /// Provides iterator over [`SequenceEntry`] objects contained in this collection.
+    ///
+    /// Note that a [`SequenceCollection`] is cleared after each [`SequenceCollection::flush()`] call,
+    ///so the returned iterator will provide only sequences gathered since the most recent  flush.
+    pub fn iter(&self) -> Iter<'_, SequenceEntry> { self.sequences.iter() }
 }
 
 impl Observer for SequenceCollection {
-    type O = EvolvingSequence;
+    type S = EvolvingSequence;
 
     /// Copy the current sequence and energy from an observed `EvolvingSequence` instance
-    fn observe(&mut self, obj: &Self::O) {
+    fn observe(&mut self, obj: &Self::S) {
         self.sequences.push(SequenceEntry{energy:obj.total_energy, sequence:obj.decode_sequence()})
     }
 
@@ -205,8 +151,6 @@ impl Observer for SequenceCollection {
         }
         self.sequences.clear();
     }
-
-    fn close(&mut self) {}
 
     fn name(&self) -> &str { "SequenceCollection" }
 
@@ -240,9 +184,9 @@ impl EnergyHistogram {
 }
 
 impl Observer for EnergyHistogram {
-    type O = EvolvingSequence;
+    type S = EvolvingSequence;
 
-    fn observe(&mut self, obj: &Self::O) {
+    fn observe(&mut self, obj: &Self::S) {
         self.stats.insert(obj.total_energy as f64);
     }
 
@@ -250,8 +194,6 @@ impl Observer for EnergyHistogram {
         let mut out_writer = out_writer(&self.output.as_str(), true);
         out_writer.write(format!("{}", self.stats).as_bytes()).ok() ;
     }
-
-    fn close(&mut self) {}
 
     fn name(&self) -> &str { "EnergyHistogram" }
 

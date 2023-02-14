@@ -12,7 +12,7 @@ use bioshell_core::chemical::ResidueType;
 use bioshell_core::sequence::{from_fasta_file, a3m_to_fasta, A3mConversionMode, Sequence,
                               SequenceProfile, ResidueTypeOrder};
 use bioshell_montecarlo::{AcceptanceStatistics, IsothermalMC, Sampler};
-use bioshell_sim::Energy;
+use bioshell_sim::{Energy, Observer};
 
 use crate::coupling_energy::CouplingEnergy;
 
@@ -21,11 +21,13 @@ mod sampling;
 mod observers;
 mod evolving_sequence;
 mod coupling_energy;
+mod pseudocounts;
 
-use crate::couplings::{Couplings, counts_from_msa};
+use crate::couplings::{Couplings, counts_from_msa, update_couplings};
+use crate::pseudocounts::Pseudocounts;
 use crate::evolving_sequence::EvolvingSequence;
 use crate::sampling::{FlipOnePos};
-use crate::observers::{EnergyHistogram, ObservedCounts, Observer, SequenceCollection, PrintSequence};
+use crate::observers::{EnergyHistogram, ObservedCounts, SequenceCollection, PrintSequence};
 
 // make it multi-core
 
@@ -60,50 +62,6 @@ struct Args {
 }
 
 
-/// Update the `couplings` matrix to lower the distance between expected and target observations
-///
-/// ```math
-/// j^{k,l}_{A,B} = j^{k,l}_{A,B} - \text{c} * \frac{p^{k,l}_{A,B} - \hat{p}^{k,l}_{A,B}}{p^{k,l}_{A,B}}
-/// ```
-pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, profile: &SequenceProfile,
-                        pseudo_fraction: f64, newton_step: f64, couplings: &mut Couplings) -> f64 {
-
-
-    let mut error: f64 = 0.0;
-    let k_aa = profile.residue_order().size();
-    let n_res = profile.len();
-    for i_pos in 0..n_res {
-        for i_aa in 0..k_aa {
-            let i_ind = i_pos * k_aa + i_aa;
-            for j_pos in 0..n_res {
-                if i_pos == j_pos { continue }
-                for j_aa in 0..k_aa {
-                    let mut pseudo: f64 = profile.fraction(i_pos, i_aa) as f64 * profile.fraction(j_pos, j_aa) as f64;
-                    pseudo *= pseudo_fraction;
-                    let j_ind = j_pos * k_aa + j_aa;
-                    let target_val = target_counts.data[i_ind][j_ind] as f64;
-                    let observed_val = observed_counts.data[i_ind][j_ind] as f64;
-                    let mut delta = target_val - observed_val;
-                    if observed_val.abs() < 1e-7 && target_val.abs() < 1e-7 {
-                        continue;
-                    }
-                    error += delta*delta;
-                    let step = newton_step * delta / (2.0 * observed_val + pseudo);
-                    if delta.abs() > 10000.0 {
-                        println!("{:3} {:2} {:3} {:2}  should be: {:5.3}  observed: {:5.3}, J: {:5.3} -> {:5.3} by {}, delta: {}, err: {}",
-                                 i_pos, i_aa, j_pos, j_aa,
-                                 target_val, observed_val,
-                                 couplings.data[i_ind][j_ind], couplings.data[i_ind][j_ind] as f64 - step, step, delta, delta * delta);
-                    }
-                    couplings.data[i_ind][j_ind] -= step as f32;
-                }
-            }
-        }
-    }
-    return error;
-}
-
-
 pub fn main() {
 
     let args = Args::parse();
@@ -133,6 +91,7 @@ pub fn main() {
     writeln!(&mut w, "{}", target_counts).unwrap();
     let prof: SequenceProfile = SequenceProfile::new(aa_order.clone(), &msa);
     println!("{}", &prof);
+    let pseudo_cnts = Pseudocounts::new(pseudo_fraction, prof);
     let mut energy = CouplingEnergy{cplngs: target_counts.clone() };
     system.total_energy = energy.energy(&system);
 
@@ -169,7 +128,7 @@ pub fn main() {
         let observed_counts = obs_freq.get_counts();
         debug!("Normalized observed:\n{}",observed_counts);
         let err = update_couplings(&target_counts, &observed_counts,
-                                   &prof, pseudo_fraction, newton_step, &mut energy.cplngs);
+                                   &pseudo_cnts, newton_step, &mut energy.cplngs);
         info!("ERROR: {}", err);
         // ---------- recalculate energy - the old value became obsolete when couplings were changed
         system.total_energy = energy.energy(&system);
