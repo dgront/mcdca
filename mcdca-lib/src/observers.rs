@@ -89,7 +89,7 @@ impl Observer for ObservedCounts {
 }
 
 /// Helper struct to store a single sequence data
-struct SequenceEntry {
+pub struct SequenceEntry {
     energy: f64,
     sequence: String
 }

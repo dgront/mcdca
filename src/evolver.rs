@@ -1,5 +1,4 @@
 use std::env;
-use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::Write;
 use std::time::Instant;
@@ -14,20 +13,12 @@ use bioshell_core::sequence::{from_fasta_file, a3m_to_fasta, A3mConversionMode, 
 use bioshell_montecarlo::{AcceptanceStatistics, IsothermalMC, Sampler};
 use bioshell_sim::{Energy, Observer};
 
-use crate::coupling_energy::CouplingEnergy;
-
-mod couplings;
-mod sampling;
-mod observers;
-mod evolving_sequence;
-mod coupling_energy;
-mod pseudocounts;
-
-use crate::couplings::{Couplings, counts_from_msa, update_couplings};
-use crate::pseudocounts::Pseudocounts;
-use crate::evolving_sequence::EvolvingSequence;
-use crate::sampling::{FlipOnePos};
-use crate::observers::{EnergyHistogram, ObservedCounts, SequenceCollection, PrintSequence};
+use mcdca_lib::CouplingEnergy;
+use mcdca_lib::{Couplings, counts_from_msa, update_couplings};
+use mcdca_lib::Pseudocounts;
+use mcdca_lib::EvolvingSequence;
+use mcdca_lib::{FlipOnePos};
+use mcdca_lib::{EnergyHistogram, ObservedCounts, SequenceCollection, PrintSequence};
 
 // make it multi-core
 
