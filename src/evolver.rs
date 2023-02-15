@@ -1,8 +1,11 @@
+mod args;
+
 use std::env;
 use std::fs::File;
 use std::io::Write;
 use std::time::Instant;
-use clap::{Parser};
+
+use clap::Parser;
 
 #[macro_use]
 extern crate log;
@@ -20,38 +23,9 @@ use mcdca_lib::EvolvingSequence;
 use mcdca_lib::{FlipOnePos};
 use mcdca_lib::{EnergyHistogram, ObservedCounts, SequenceCollection, PrintSequence};
 
+use args::Args;
+
 // make it multi-core
-
-#[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
-/// Find direct coupling between amino acids in a given MSA
-struct Args {
-    /// input sequence in FASTA format
-    #[clap(short, long, short='f')]
-    fasta: String,
-    /// input MSA in A3M format
-    #[clap(short, long, short='m')]
-    msa: String,
-    /// number of inner MC cycles
-    #[clap(short, long, default_value_t = 100)]
-    inner: usize,
-    /// number of outer MC cycles
-    #[clap(short, long, default_value_t = 100)]
-    outer: usize,
-    /// number of optimization cycles
-    #[clap(short, long, default_value_t = 10, short='c')]
-    optcycles: u32,
-    /// input is RNA rather than a protein
-    #[clap( long)]
-    rna: bool,
-    /// number of optimization cycles
-    #[clap(short, long, default_value_t = 0.01, short='n')]
-    newton_step: f64,
-    /// fraction of pseudocounts added to both observed and target statistics
-    #[clap(short, long, default_value_t = 0.001, short='p')]
-    pseudo_fraction: f64,
-}
-
 
 pub fn main() {
 
@@ -124,5 +98,4 @@ pub fn main() {
         // ---------- recalculate energy - the old value became obsolete when couplings were changed
         system.total_energy = energy.energy(&system);
     }
-
 }
