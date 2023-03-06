@@ -2,6 +2,15 @@ use bioshell_sim::{ResizableSystem, System};
 use bioshell_core::sequence::ResidueTypeOrder;
 use crate::coupling_energy::CouplingEnergy;
 
+
+/// Stores a sequence and its energy
+///
+/// In the case of PERM sampling, the ``energy`` field is used to store Boltzmann weight rather than the energy itself
+pub struct SequenceEntry {
+    pub(crate) energy: f64,
+    pub(crate) sequence: String
+}
+
 #[derive(Clone)]
 pub struct EvolvingSequence {
     /// Most recent total energy of the sequence system
@@ -34,6 +43,10 @@ impl EvolvingSequence {
         buffer.iter().collect()
     }
 
+    /// Returns the alphabet size for this sequence.
+    ///
+    /// The alphabet size is typically 20 for proteins and 4 for nucleic acids (21 and 5 respectively,
+    /// when a gap symbol is also allowed in a sequence)
     pub fn aa_cnt(&self) -> usize { self.res_mapping.size() }
 
     pub fn decode_sequence(&self) -> String {
@@ -63,6 +76,22 @@ impl EvolvingSequence {
         }
 
         return en as f64;
+    }
+
+
+    pub fn energy_by_letter(&self, pos: usize, energy: &CouplingEnergy, results: &mut Vec<f32>) {
+
+        for i in 0..self.aa_cnt() { results[i] = 0.0; }
+
+        let mut pos_j: usize = 0;
+        let pos_i: usize = pos * self.aa_cnt();
+
+        for aa_j in self.sequence.iter() {
+            for i in 0..self.aa_cnt() {
+                results[i] += energy.cplngs.data[pos_j + *aa_j as usize][pos_i+i];
+            }
+            pos_j += self.aa_cnt();
+        }
     }
 }
 

@@ -24,3 +24,7 @@ mcdca-lib = {path = "./mcdca-lib"}
 [[bin]]
 name = "evolver"
 path = "src/evolver.rs"
+
+[[bin]]
+name = "builder"
+path = "src/builder.rs"

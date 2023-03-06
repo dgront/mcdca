@@ -5,13 +5,12 @@ use bioshell_sim::{Observer, ObserversSet};
 use bioshell_statistics::Histogram;
 use bioshell_core::utils::{out_writer, writes_to_screen};
 
-// ---------- generic traits and types that should be relocated to bioshell
 
-use crate::{Couplings, EvolvingSequence};
+use crate::{Couplings, EvolvingSequence, SequenceEntry};
 
-
-
-// ---------- DCA-related stuff
+/// Prints a sequence on a screen.
+///
+/// This simple observer just print energy of a sequence and the sequence itself in a single row
 pub struct PrintSequence;
 
 impl Observer for PrintSequence {
@@ -88,11 +87,6 @@ impl Observer for ObservedCounts {
     fn as_any(&self) -> &dyn Any { self }
 }
 
-/// Helper struct to store a single sequence data
-pub struct SequenceEntry {
-    energy: f64,
-    sequence: String
-}
 
 /// Collects sequences together with their energy
 ///

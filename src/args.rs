@@ -6,7 +6,7 @@ use clap::{Parser};
 /// Since both apps share most of their flags, this struct has been moved into a separate file
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
-pub(crate) struct Args {
+pub struct Args {
     /// input sequence in FASTA format
     #[clap(short, long, short='f')]
     pub fasta: String,
