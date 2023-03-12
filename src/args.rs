@@ -17,16 +17,16 @@ pub struct Args {
     #[clap(short, long, default_value_t = 100)]
     pub inner: usize,
     /// number of outer MC cycles
-    #[clap(short, long, default_value_t = 100)]
+    #[clap(short, long, default_value_t = 10000)]
     pub outer: usize,
     /// number of optimization cycles
-    #[clap(short, long, default_value_t = 10, short='c')]
+    #[clap(short, long, default_value_t = 50, short='c')]
     pub optcycles: u32,
     /// input is RNA rather than a protein
     #[clap( long)]
     pub rna: bool,
-    /// number of optimization cycles
-    #[clap(short, long, default_value_t = 0.01, short='n')]
+    /// factor to scale down each Newtonian optimisation step
+    #[clap(short, long, default_value_t = 0.1, short='n')]
     pub newton_step: f64,
     /// fraction of pseudocounts added to both observed and target statistics
     #[clap(short, long, default_value_t = 0.001, short='p')]

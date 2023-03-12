@@ -10,8 +10,7 @@ use clap::Parser;
 #[macro_use]
 extern crate log;
 
-use bioshell_core::chemical::ResidueType;
-use bioshell_core::sequence::{from_fasta_file, a3m_to_fasta, A3mConversionMode, Sequence,
+use bioshell_core::sequence::{from_file, from_fasta_reader, a3m_to_fasta, A3mConversionMode,
                               SequenceProfile, ResidueTypeOrder};
 use bioshell_montecarlo::{AcceptanceStatistics, IsothermalMC, Sampler};
 use bioshell_sim::{Energy, Observer};
@@ -21,7 +20,7 @@ use mcdca_lib::{Couplings, counts_from_msa, update_couplings};
 use mcdca_lib::Pseudocounts;
 use mcdca_lib::EvolvingSequence;
 use mcdca_lib::{FlipOnePos};
-use mcdca_lib::{EnergyHistogram, ObservedCounts, SequenceCollection, PrintSequence};
+use mcdca_lib::{ObservedCounts, SequenceCollection, PrintSequence};
 
 use args::Args;
 
@@ -34,10 +33,10 @@ pub fn main() {
     env_logger::init();
 
     // ---------- Input sequence
-    let seq: String = from_fasta_file(&args.fasta)[0].to_string();
+    let seq: String = from_file(&args.fasta, from_fasta_reader)[0].to_string();
 
     // ---------- Read the target MSA and cleanup insertions
-    let mut msa = from_fasta_file(&args.msa);
+    let mut msa = from_file(&args.msa, from_fasta_reader);
     a3m_to_fasta(&mut msa, &A3mConversionMode::RemoveSmallCaps);
 
     // ---------- Other settings

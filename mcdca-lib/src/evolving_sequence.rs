@@ -8,6 +8,7 @@ use crate::coupling_energy::CouplingEnergy;
 /// In the case of PERM sampling, the ``energy`` field is used to store Boltzmann weight rather than the energy itself
 pub struct SequenceEntry {
     pub(crate) energy: f64,
+    pub(crate) weight: f64,
     pub(crate) sequence: String
 }
 
@@ -15,6 +16,8 @@ pub struct SequenceEntry {
 pub struct EvolvingSequence {
     /// Most recent total energy of the sequence system
     pub total_energy: f64,
+    /// Statistical weight of the current state of this sequence
+    pub weight: f64,
     /// Protein or nucleic acid  sequence - encoded as `u8` integers
     /// Length of this vector should match the length of the evolving sequence
     pub sequence: Vec<u8>,
@@ -26,7 +29,7 @@ impl EvolvingSequence {
     pub fn new(starting_sequence: &String, res_mapping: ResidueTypeOrder) -> EvolvingSequence {
         let n = starting_sequence.len();
         let sequence: Vec<u8> = Vec::new();
-        let mut out = EvolvingSequence { total_energy: 0.0, sequence, res_mapping, current_size: n};
+        let mut out = EvolvingSequence { total_energy: 0.0, weight: 1.0, sequence, res_mapping, current_size: n};
         out.sequence = out.encode_sequence(starting_sequence);
 
         return out;
@@ -38,7 +41,7 @@ impl EvolvingSequence {
         let mut buffer: Vec<char> = Vec::new();
         buffer.reserve(system.len());
         for aai in system {
-            buffer.push(self.res_mapping.decode_letter(*aai));
+            buffer.push(self.res_mapping.index_to_letter(*aai));
         }
         buffer.iter().collect()
     }
@@ -54,10 +57,11 @@ impl EvolvingSequence {
     }
 
     pub fn encode_sequence(&self, seq: &String) -> Vec<u8> {
-        let mut buffer: Vec<u8> = Vec::new();
-        buffer.reserve(seq.len());
-        for aai in seq.chars() {
-            buffer.push(self.res_mapping.encode_letter(&aai));
+
+        let types: Vec<u8> = seq.to_owned().into_bytes();
+        let mut buffer: Vec<u8> = vec![];
+        for aai in types {
+            buffer.push(self.res_mapping.type_to_index(&aai) as u8);
         }
         return buffer;
     }
@@ -77,7 +81,6 @@ impl EvolvingSequence {
 
         return en as f64;
     }
-
 
     pub fn energy_by_letter(&self, pos: usize, energy: &CouplingEnergy, results: &mut Vec<f32>) {
 

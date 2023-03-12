@@ -11,13 +11,13 @@ use clap::Parser;
 extern crate log;
 
 use bioshell_core::chemical::ResidueType;
-use bioshell_core::sequence::{from_fasta_file, a3m_to_fasta, A3mConversionMode, Sequence,
+use bioshell_core::sequence::{from_fasta_reader, from_file, a3m_to_fasta, A3mConversionMode, Sequence,
                               SequenceProfile, ResidueTypeOrder};
 use bioshell_montecarlo::{PERM, StepwiseBuilder};
 use bioshell_sim::{Energy, Observer};
 
 // use mcdca_lib::{counts_from_weighted_sequences};
-use mcdca_lib::{CouplingEnergy};
+use mcdca_lib::{counts_from_weighted_sequences, CouplingEnergy};
 use mcdca_lib::{Couplings, counts_from_msa, update_couplings, EvolvingSequence, Pseudocounts};
 use mcdca_lib::{EnergyHistogram, ObservedCounts, SequenceCollection, PrintSequence};
 use mcdca_lib::{SequenceBuilder};
@@ -29,14 +29,14 @@ use args::Args;
 pub fn main() {
 
     let args = Args::parse();
-    if env::var("RUST_LOG").is_err() { env::set_var("RUST_LOG", "debug") }
+    if env::var("RUST_LOG").is_err() { env::set_var("RUST_LOG", "info") }
     env_logger::init();
 
     // ---------- Input sequence
-    let seq: String = from_fasta_file(&args.fasta)[0].to_string();
+    let seq: String = from_file(&args.fasta, from_fasta_reader)[0].to_string();
 
     // ---------- Read the target MSA and cleanup insertions
-    let mut msa = from_fasta_file(&args.msa);
+    let mut msa = from_file(&args.msa, from_fasta_reader);
     a3m_to_fasta(&mut msa, &A3mConversionMode::RemoveSmallCaps);
 
     // ---------- Other settings
@@ -54,7 +54,7 @@ pub fn main() {
     let mut w = File::create("target_msa_counts.dat").unwrap();
     writeln!(&mut w, "{}", target_counts).unwrap();
     let prof: SequenceProfile = SequenceProfile::new(aa_order.clone(), &msa);
-    println!("{}", &prof);
+    // println!("{}", &prof);
     let pseudo_cnts = Pseudocounts::new(pseudo_fraction, prof);
     let mut energy = CouplingEnergy{cplngs: target_counts.clone() };
     system.total_energy = energy.energy(&system);
@@ -72,21 +72,22 @@ pub fn main() {
         let mut collect_seq = SequenceCollection::new(format!("sequences-{}.dat", i_newt).as_str(), false);
 
         for i in 0..args.outer {
-            let weight = sampler.build(&mut system, &energy);
-            system.total_energy = weight;
-            obs_seq.observe(&system);
+            system.weight = sampler.build(&mut system, &energy);
+            system.total_energy = energy.energy(&system);
+            // obs_seq.observe(&system);
             collect_seq.observe(&system);
         }
-        // ---------- Newton optimisation step
-        debug!("target counts:\n{}", &target_counts);
-        // debug!("observed counts:\n{}", &obs_freq.get_counts());
 
-        // let observed_counts = counts_from_weighted_sequences(&system, collect_seq.iter());
+        collect_seq.normalize_sequence_weights();
+        let observed_counts = counts_from_weighted_sequences(&system, collect_seq.iter());
         collect_seq.flush();
         // debug!("Normalized observed:\n{}",observed_counts);
-        // let err = update_couplings(&target_counts, &observed_counts,
-        //                            &pseudo_cnts, newton_step, &mut energy.cplngs);
-        // info!("ERROR: {}", err);
+        // ---------- Newton optimisation step
+        debug!("target counts:\n{}", &target_counts);
+        debug!("observed counts:\n{}", &observed_counts);
+        let err = update_couplings(&target_counts, &observed_counts,
+                                   &pseudo_cnts, newton_step, &mut energy.cplngs);
+        info!("ERROR: {}", err);
         // ---------- recalculate energy - the old value became obsolete when couplings were changed
         system.total_energy = energy.energy(&system);
     }

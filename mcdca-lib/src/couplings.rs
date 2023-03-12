@@ -1,6 +1,8 @@
 use std::fmt;
+use std::slice::Iter;
 
 use bioshell_core::sequence::Sequence;
+use crate::evolving_sequence::SequenceEntry;
 use crate::EvolvingSequence;
 use crate::pseudocounts::Pseudocounts;
 
@@ -91,19 +93,30 @@ impl fmt::Display for Couplings {
     }
 }
 
-
-
-
 /// Initializes coupling from a given set of sequences.
 ///
-pub fn counts_from_msa(system: &EvolvingSequence, msa: &Vec<Sequence>) -> Couplings {
+pub fn counts_from_weighted_sequences(system: &EvolvingSequence, seq_pool: Iter<'_, SequenceEntry>) -> Couplings {
 
+    let mut weights: Vec<f64> = Vec::new();
+    let mut msa: Vec<Sequence> = Vec::new();
+
+    let seq_id: String = "".parse().unwrap();
+    for sequence in seq_pool {
+        weights.push(sequence.energy);
+        msa.push(Sequence::new(&seq_id, &sequence.sequence));
+    }
+
+    return counts_from_weighted_msa(system, &msa, &weights);
+}
+
+pub fn counts_from_weighted_msa(system: &EvolvingSequence, msa: &Vec<Sequence>, weights: &Vec<f64>) -> Couplings {
     let n = system.seq_len();
     let k = system.res_mapping.size();
     let mut cplngs: Couplings = Couplings::new(n, k);
 
     let mut tmp_i: Vec<usize> = vec![0; n];       // Temporary indexes aa->cplngs matrix
-    let mut n_seq: f32 = 0.0;
+    let mut i_seq: usize = 0;
+    let total_weight: f64 = weights.iter().sum();
     for sequence in msa {
         if sequence.len() != n {
             eprintln!("\nSequence of incorrect length! Is: {}, should be: {}. The sequence skipped::\n {}\n",
@@ -113,20 +126,29 @@ pub fn counts_from_msa(system: &EvolvingSequence, msa: &Vec<Sequence>) -> Coupli
         // --- for every position in a sequence, find the location of that AA in the big cplngs matrix
         // --- This is done in linear time here and called below in a square loop
         for idx in 0..n {
-            tmp_i[idx] = idx * k + system.res_mapping.encode_letter(&sequence.char(idx)) as usize;
+            tmp_i[idx] = idx * k + system.res_mapping.type_to_index(&sequence.seq()[idx]) as usize;
         }
         // --- Count each pair coincidence
+        let w = 0.5 * weights[i_seq] / total_weight;
         for i_pos in 1..n {
             for j_pos in 0..i_pos {
-                cplngs.data[tmp_i[i_pos]][tmp_i[j_pos]] += 0.5;
-                cplngs.data[tmp_i[j_pos]][tmp_i[i_pos]] += 0.5;
+                cplngs.data[tmp_i[i_pos]][tmp_i[j_pos]] += w as f32;
+                cplngs.data[tmp_i[j_pos]][tmp_i[i_pos]] += w as f32;
             }
         }
-        n_seq += 1.0;
+        i_seq += 1;
     }
-    cplngs.normalize(n_seq as f32);   // --- times 2.0 because sequences are loaded twice: to upper and lower triangle of the matrix
+    cplngs.normalize(i_seq as f32);   // --- times 2.0 because sequences are loaded twice: to upper and lower triangle of the matrix
 
     return cplngs;
+}
+
+/// Initializes coupling from a given set of aligned sequences.
+///
+pub fn counts_from_msa(system: &EvolvingSequence, msa: &Vec<Sequence>) -> Couplings {
+
+    let weights = vec![1.0; msa.len()];
+    return counts_from_weighted_msa(system, &msa, &weights);
 }
 
 
@@ -137,7 +159,6 @@ pub fn counts_from_msa(system: &EvolvingSequence, msa: &Vec<Sequence>) -> Coupli
 /// ```
 pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, pseudocounts: &Pseudocounts,
                         newton_step: f64, simulated_couplings: &mut Couplings) -> f64 {
-
 
     let mut error: f64 = 0.0;
     let k_aa = target_counts.k_aa_types;

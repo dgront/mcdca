@@ -88,9 +88,9 @@ impl Observer for ObservedCounts {
 }
 
 
-/// Collects sequences together with their energy
+/// Collects sequences.
 ///
-/// The collection can estimate the observed counts from sequences it keeps assuming canonical ensemble
+///
 pub struct SequenceCollection {
     flush_separately: bool,
     flush_id:i16,
@@ -117,6 +117,19 @@ impl SequenceCollection {
     /// Note that a [`SequenceCollection`] is cleared after each [`SequenceCollection::flush()`] call,
     ///so the returned iterator will provide only sequences gathered since the most recent  flush.
     pub fn iter(&self) -> Iter<'_, SequenceEntry> { self.sequences.iter() }
+
+    /// Normalizes weights of sequences stored in this collection
+    ///
+    /// After this call, weight of all the sequences will sum up to 1.0
+    pub fn normalize_sequence_weights(&mut self) {
+        let mut total = 0.0;
+        for sequence in &self.sequences {
+            total += sequence.weight;
+        }
+        for sequence in &mut self.sequences {
+            sequence.weight /= total;
+        }
+    }
 }
 
 impl Observer for SequenceCollection {
@@ -124,7 +137,7 @@ impl Observer for SequenceCollection {
 
     /// Copy the current sequence and energy from an observed `EvolvingSequence` instance
     fn observe(&mut self, obj: &Self::S) {
-        self.sequences.push(SequenceEntry{energy:obj.total_energy, sequence:obj.decode_sequence()})
+        self.sequences.push(SequenceEntry{energy:obj.total_energy, weight: obj.weight, sequence:obj.decode_sequence()})
     }
 
     /// Stores observations in a file or prints on the screen.
@@ -141,7 +154,7 @@ impl Observer for SequenceCollection {
         };
         let mut out_writer = out_writer(fname.as_str(), true);
         for s in self.sequences.iter() {
-            out_writer.write(format!("{:3} {}\n", s.energy, s.sequence).as_bytes()).ok();
+            out_writer.write(format!("{:11.6} {:8.6} {}\n", s.energy, s.weight, s.sequence).as_bytes()).ok();
         }
         self.sequences.clear();
     }
