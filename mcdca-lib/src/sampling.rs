@@ -94,9 +94,7 @@ impl StepwiseMover<EvolvingSequence, CouplingEnergy> for SequenceBuilder {
             self.energy_by_letter[i] = (-self.energy_by_letter[i]/self.temperature as f32).exp();
             total += self.energy_by_letter[i];
         }
-
-        if total < 1e-100 { return 0.0; }       // --- no suitable move generated
-
+        if total < 1e-20 || total.is_infinite() { return 0.0; }       // --- no suitable move generated
         // ---------- select one of the possible extension by importance sampling
         let mut rng = rand::thread_rng();
         let r = rng.gen_range(0.0..total);

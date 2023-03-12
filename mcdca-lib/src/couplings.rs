@@ -174,7 +174,7 @@ pub fn update_couplings(target_counts: &Couplings, observed_counts: &Couplings, 
                     let target_val = target_counts.data[i_ind][j_ind] as f64;
                     let observed_val = observed_counts.data[i_ind][j_ind] as f64;
                     let mut delta = target_val - observed_val;
-                    if observed_val.abs() < 1e-7 && target_val.abs() < 1e-7 {
+                    if observed_val.abs() < 1e-10 && target_val.abs() < 1e-10 {
                         continue;
                     }
                     error += delta*delta;

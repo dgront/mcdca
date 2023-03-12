@@ -14,7 +14,7 @@ use bioshell_core::chemical::ResidueType;
 use bioshell_core::sequence::{from_fasta_reader, from_file, a3m_to_fasta, A3mConversionMode, Sequence,
                               SequenceProfile, ResidueTypeOrder};
 use bioshell_montecarlo::{PERM, StepwiseBuilder};
-use bioshell_sim::{Energy, Observer};
+use bioshell_sim::{Energy, Observer, ResizableSystem, System};
 
 // use mcdca_lib::{counts_from_weighted_sequences};
 use mcdca_lib::{counts_from_weighted_sequences, CouplingEnergy};
@@ -59,23 +59,31 @@ pub fn main() {
     let mut energy = CouplingEnergy{cplngs: target_counts.clone() };
     system.total_energy = energy.energy(&system);
 
-    // ---------- Create a PERM sampler
-    let mut sampler: PERM<EvolvingSequence, CouplingEnergy> = PERM::new(system.seq_len(), 0.1, 10.0,
-            Box::new(SequenceBuilder::new(1.0,system.aa_cnt())));
-
     let mut obs_seq = PrintSequence{};
 
     // ---------- Run the simulation!
     let start = Instant::now();
     for i_newt in 0..n_cycles {
+        // ---------- Create a PERM sampler
+        let builder = Box::new(SequenceBuilder::new(1.0,system.aa_cnt()));
+        let mut sampler: PERM<EvolvingSequence, CouplingEnergy> = PERM::new(system.seq_len(), 0.1, 10.0,
+                                                                            builder);
+        sampler.set_w_scale(20.0);
+
         // ---------- Observers
         let mut collect_seq = SequenceCollection::new(format!("sequences-{}.dat", i_newt).as_str(), false);
 
-        for i in 0..args.outer {
+        let mut i_chains: usize = 0;
+        while i_chains < args.outer {
+            // --- build a new chain
             system.weight = sampler.build(&mut system, &energy);
+            // --- skip system if it was pruned
+            if system.size() < system.capacity() { continue; }
             system.total_energy = energy.energy(&system);
+            // println!("{}   {} {} {:?}", system.size(), system.total_energy, system.weight, sampler.weights(system.size() - 1));
             // obs_seq.observe(&system);
             collect_seq.observe(&system);
+            i_chains += 1;
         }
 
         collect_seq.normalize_sequence_weights();
